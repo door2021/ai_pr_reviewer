@@ -1,0 +1,33 @@
+# FastAPI & Server
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database
+sqlalchemy
+pymysql
+alembic
+
+# Redis
+redis
+
+# Authentication
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
+
+# HTTP Client
+httpx
+
+# AI & ML
+huggingface_hub
+transformers
+torch
+
+# Validation & Settings
+pydantic
+pydantic-settings
+python-dotenv
+
+# Utilities
+python-dateutil

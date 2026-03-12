@@ -1,0 +1,134 @@
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useStore } from '@/store/useStore';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Card, CardContent } from '@/components/ui/Card';
+import { Mail, Lock, User, Github, Loader2, Check } from 'lucide-react';
+
+export default function Signup() {
+  const navigate = useNavigate();
+  const { login } = useStore();
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!formData.name) newErrors.name = 'Name is required';
+    if (!formData.email) newErrors.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Invalid email format';
+    if (!formData.password) newErrors.password = 'Password is required';
+    else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
+    if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+
+    setLoading(true);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    login({ id: '1', name: formData.name, email: formData.email });
+    setLoading(false);
+    navigate('/dashboard');
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-blue-500/10" />
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl" />
+
+      <div className="w-full max-w-md relative z-10">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl gradient-success mb-4 shadow-2xl shadow-emerald-500/25">
+            <Check className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
+          <p className="text-text-muted">Start reviewing code with AI today</p>
+        </div>
+
+        <Card className="border-border/50 backdrop-blur-xl bg-surface/80">
+          <CardContent className="p-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <Input
+                label="Full Name"
+                placeholder="John Doe"
+                icon={<User className="w-5 h-5" />}
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                error={errors.name}
+              />
+
+              <Input
+                label="Email"
+                type="email"
+                placeholder="name@example.com"
+                icon={<Mail className="w-5 h-5" />}
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                error={errors.email}
+              />
+
+              <Input
+                label="Password"
+                type="password"
+                placeholder="••••••••"
+                icon={<Lock className="w-5 h-5" />}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                error={errors.password}
+              />
+
+              <Input
+                label="Confirm Password"
+                type="password"
+                placeholder="••••••••"
+                icon={<Lock className="w-5 h-5" />}
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                error={errors.confirmPassword}
+              />
+
+              <Button type="submit" className="w-full" size="lg" loading={loading}>
+                Create Account
+              </Button>
+            </form>
+
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-surface px-2 text-text-muted">Or sign up with</span>
+              </div>
+            </div>
+
+            <Button variant="secondary" className="w-full">
+              <Github className="mr-2 h-5 w-5" />
+              Sign up with GitHub
+            </Button>
+          </CardContent>
+        </Card>
+
+        <p className="text-center mt-6 text-text-muted">
+          Already have an account?{' '}
+          <Link to="/login" className="text-primary hover:text-primary/80 font-medium transition-colors">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
