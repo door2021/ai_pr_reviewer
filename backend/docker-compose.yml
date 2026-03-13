@@ -4,7 +4,8 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      # MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: ai_pr
     ports:
       - "3306:3306"
@@ -33,7 +34,7 @@ services:
     env_file:
       - .env  
     environment:
-      - DATABASE_URL=mysql+pymysql://root:password@mysql:3306/ai_pr
+      - DATABASE_URL=mysql+pymysql://root:@mysql:3306/ai_pr
       - REDIS_URL=redis://redis:6379
       - SECRET_KEY=${SECRET_KEY}
       - HF_TOKEN=${HF_TOKEN}
