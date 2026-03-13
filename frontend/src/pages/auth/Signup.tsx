@@ -4,44 +4,43 @@ import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Mail, Lock, User, Github, Loader2, Check } from 'lucide-react';
+import { Mail, Lock, User, Github, Check } from 'lucide-react';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { login } = useStore();
-  const [loading, setLoading] = useState(false);
+  const { signup, isLoading, error } = useStore();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.name) newErrors.name = 'Name is required';
-    if (!formData.email) newErrors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Invalid email format';
-    if (!formData.password) newErrors.password = 'Password is required';
-    else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
+    const errors: Record<string, string> = {};
+    if (!formData.name) errors.name = 'Name is required';
+    if (!formData.email) errors.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = 'Invalid email format';
+    if (!formData.password) errors.password = 'Password is required';
+    else if (formData.password.length < 8) errors.password = 'Password must be at least 8 characters';
     if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
+      errors.confirmPassword = 'Passwords do not match';
     }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
-    setLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    login({ id: '1', name: formData.name, email: formData.email });
-    setLoading(false);
-    navigate('/dashboard');
+    try {
+      await signup(formData.email, formData.password, formData.name);
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Signup error:', err);
+    }
   };
 
   return (
@@ -61,14 +60,23 @@ export default function Signup() {
 
         <Card className="border-border/50 backdrop-blur-xl bg-surface/80">
           <CardContent className="p-6">
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
                 label="Full Name"
                 placeholder="John Doe"
                 icon={<User className="w-5 h-5" />}
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                error={errors.name}
+                onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+                  setValidationErrors({ ...validationErrors, name: '' });
+                }}
+                error={validationErrors.name}
               />
 
               <Input
@@ -77,8 +85,11 @@ export default function Signup() {
                 placeholder="name@example.com"
                 icon={<Mail className="w-5 h-5" />}
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                error={errors.email}
+                onChange={(e) => {
+                  setFormData({ ...formData, email: e.target.value });
+                  setValidationErrors({ ...validationErrors, email: '' });
+                }}
+                error={validationErrors.email}
               />
 
               <Input
@@ -87,8 +98,11 @@ export default function Signup() {
                 placeholder="••••••••"
                 icon={<Lock className="w-5 h-5" />}
                 value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                error={errors.password}
+                onChange={(e) => {
+                  setFormData({ ...formData, password: e.target.value });
+                  setValidationErrors({ ...validationErrors, password: '' });
+                }}
+                error={validationErrors.password}
               />
 
               <Input
@@ -97,11 +111,14 @@ export default function Signup() {
                 placeholder="••••••••"
                 icon={<Lock className="w-5 h-5" />}
                 value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                error={errors.confirmPassword}
+                onChange={(e) => {
+                  setFormData({ ...formData, confirmPassword: e.target.value });
+                  setValidationErrors({ ...validationErrors, confirmPassword: '' });
+                }}
+                error={validationErrors.confirmPassword}
               />
 
-              <Button type="submit" className="w-full" size="lg" loading={loading}>
+              <Button type="submit" className="w-full" size="lg" loading={isLoading}>
                 Create Account
               </Button>
             </form>
@@ -111,11 +128,11 @@ export default function Signup() {
                 <div className="w-full border-t border-border"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-surface px-2 text-text-muted">Or sign up with</span>
+                <span className="bg-surface px-2 text-text-muted">Coming Soon</span>
               </div>
             </div>
 
-            <Button variant="secondary" className="w-full">
+            <Button variant="secondary" className="w-full" disabled>
               <Github className="mr-2 h-5 w-5" />
               Sign up with GitHub
             </Button>
