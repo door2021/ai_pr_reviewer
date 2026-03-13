@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
-# --- Enums ---
 class ReviewStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -26,7 +25,6 @@ class MergeMethod(str, Enum):
     SQUASH = "squash"
     REBASE = "rebase"
 
-# --- User Schemas ---
 class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
@@ -50,7 +48,6 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-# --- Token Schemas ---
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -59,7 +56,6 @@ class TokenData(BaseModel):
     user_id: Optional[int] = None
     email: Optional[str] = None
 
-# --- Review Schemas ---
 class FeedbackItem(BaseModel):
     severity: str
     message: str
@@ -108,7 +104,6 @@ class ReviewResponse(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
-# --- Chat Message Schemas ---
 class ChatMessageCreate(BaseModel):
     review_id: int
     content: str
@@ -123,7 +118,6 @@ class ChatMessageResponse(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
-# --- GitHub Schemas ---
 class GitHubTokenRequest(BaseModel):
     token: str
 
@@ -144,7 +138,6 @@ class GitHubPR(BaseModel):
     created_at: datetime
     user: Dict[str, str]
 
-# --- PR Management Schemas ---
 class PRMergeRequest(BaseModel):
     merge_method: MergeMethod = MergeMethod.SQUASH
     commit_title: Optional[str] = None
@@ -161,7 +154,6 @@ class MergeDecision(BaseModel):
     reason: str
     required_actions: List[str] = []
 
-# --- Response Wrappers ---
 class MessageResponse(BaseModel):
     message: str
     success: bool = True

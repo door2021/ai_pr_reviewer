@@ -9,7 +9,6 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(user_data: UserCreate, db: Session = Depends(get_db)):
-    # Validate password
     is_valid, message = auth_service.validate_password(user_data.password)
     if not is_valid:
         raise HTTPException(
@@ -17,7 +16,6 @@ async def signup(user_data: UserCreate, db: Session = Depends(get_db)):
             detail=message
         )
     
-    # Check if user exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(
@@ -25,7 +23,6 @@ async def signup(user_data: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
     
-    # Create user
     from app.utils.security import get_password_hash
     user = User(
         email=user_data.email,
