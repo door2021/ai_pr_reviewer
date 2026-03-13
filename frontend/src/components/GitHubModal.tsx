@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '@/store/useStore';
-import { X, Github, Loader2, CheckCircle, GitPullRequest } from 'lucide-react';
+import { X, Github, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -11,23 +11,40 @@ interface GitHubModalProps {
 }
 
 export default function GitHubModal({ isOpen, onClose }: GitHubModalProps) {
-  const { githubConfigured, toggleGitHub } = useStore();
+  const { githubConfigured, connectGitHub, disconnectGitHub, isLoading, error } = useStore();
   const [token, setToken] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [localError, setLocalError] = useState('');
 
   if (!isOpen) return null;
 
   const handleConnect = async () => {
-    setLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setLoading(false);
-    toggleGitHub();
+    if (!token.trim()) {
+      setLocalError('Token is required');
+      return;
+    }
+    try {
+      await connectGitHub(token);
+      setToken('');
+      setLocalError('');
+      onClose();
+    } catch (err: any) {
+      setLocalError(err.response?.data?.detail || 'Failed to connect');
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnectGitHub();
+      onClose();
+    } catch (err) {
+      console.error('Disconnect error:', err);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      
+
       <Card className="relative w-full max-w-lg border-border/50 backdrop-blur-xl bg-surface/90 shadow-2xl">
         <div className="absolute right-4 top-4">
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onClose}>
@@ -46,11 +63,28 @@ export default function GitHubModal({ isOpen, onClose }: GitHubModalProps) {
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {(error || localError) && (
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {error || localError}
+            </div>
+          )}
+
           {!githubConfigured ? (
             <>
               <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
                 <p className="text-sm text-blue-200">
-                  <strong>Tip:</strong> Create a personal access token with <code className="px-1 py-0.5 rounded bg-blue-500/20">repo</code> and <code className="px-1 py-0.5 rounded bg-blue-500/20">read:org</code> scopes.
+                  <strong>How to get your token:</strong>
+                  <br />
+                  1. Go to{' '}
+                  <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="underline">
+                    github.com/settings/tokens
+                  </a>
+                  <br />
+                  2. Click "Generate new token (classic)"
+                  <br />
+                  3. Select scopes: <code className="px-1 py-0.5 rounded bg-blue-500/20">repo</code>, <code className="px-1 py-0.5 rounded bg-blue-500/20">read:org</code>
+                  <br />
+                  4. Copy the token and paste below
                 </p>
               </div>
 
@@ -59,14 +93,18 @@ export default function GitHubModal({ isOpen, onClose }: GitHubModalProps) {
                 type="password"
                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                 value={token}
-                onChange={(e) => setToken(e.target.value)}
+                onChange={(e) => {
+                  setToken(e.target.value);
+                  setLocalError('');
+                }}
+                error={localError}
               />
 
               <div className="flex gap-3 pt-2">
                 <Button variant="secondary" className="flex-1" onClick={onClose}>
                   Cancel
                 </Button>
-                <Button className="flex-1 gap-2" onClick={handleConnect} loading={loading}>
+                <Button className="flex-1 gap-2" onClick={handleConnect} loading={isLoading}>
                   <Github className="w-4 h-4" />
                   Connect Repository
                 </Button>
@@ -82,19 +120,7 @@ export default function GitHubModal({ isOpen, onClose }: GitHubModalProps) {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-text">Connected Repositories:</p>
-                <div className="space-y-2">
-                  {['ai-pr-reviewer', 'frontend-app', 'backend-api'].map((repo) => (
-                    <div key={repo} className="flex items-center gap-3 p-3 rounded-lg bg-background/50 border border-border">
-                      <GitPullRequest className="w-4 h-4 text-text-muted" />
-                      <span className="text-sm text-text">{repo}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <Button variant="danger" className="w-full" onClick={() => { toggleGitHub(); onClose(); }}>
+              <Button variant="danger" className="w-full" onClick={handleDisconnect}>
                 Disconnect GitHub
               </Button>
             </div>

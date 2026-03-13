@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import Login from '@/pages/auth/Login';
@@ -7,10 +8,21 @@ import Dashboard from '@/pages/Dashboard';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useStore();
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
 }
 
 function App() {
+  const { checkAuth } = useStore();
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
   return (
     <BrowserRouter>
       <Routes>
