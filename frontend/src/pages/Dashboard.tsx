@@ -4,23 +4,24 @@ import Sidebar from '@/components/Sidebar';
 import CodePane from '@/components/CodePane';
 import GitHubModal from '@/components/GitHubModal';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { 
-  Zap, CheckCircle, AlertCircle, Send, Code2, 
-  GitPullRequest, MessageSquare, Sparkles, Loader2,
-  ChevronRight, X
+import {
+  Zap, CheckCircle, AlertCircle, Send, Code2,
+  GitPullRequest, Sparkles, Loader2
 } from 'lucide-react';
+import { reviewsAPI } from '@/lib/api';
 
 export default function Dashboard() {
-  const { 
-    reviewMode, toggleMode, originalCode, reviewedCode, 
-    setCode, githubConfigured 
+  const {
+    reviewMode, toggleMode, originalCode, reviewedCode,
+    setCode, currentReview, setCurrentReview,
+    approvePR, requestChanges, mergePR,
+    isLoading, error, setError
   } = useStore();
-  
+
   const [isGitHubOpen, setGitHubOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [messages, setMessages] = useState<Array<{role: 'user' | 'ai', content: string}>>([]);
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'ai', content: string }>>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,42 +35,67 @@ export default function Dashboard() {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setChatInput('');
     setIsAnalyzing(true);
+    setError(null);
 
-    // Simulate AI analysis
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const mockReview = {
-      summary: "I've analyzed your code and found several improvements:",
-      issues: [
-        { severity: 'high', message: 'Security: Use bcrypt for password comparison instead of plain text' },
-        { severity: 'medium', message: 'Add input validation for user object' },
-        { severity: 'low', message: 'Consider adding TypeScript types' }
-      ]
-    };
+    try {
+      const review = await reviewsAPI.create({
+        pr_url: 'https://github.com/demo/pr/1',
+        code_diff: userMessage,
+        original_code: userMessage,
+        review_mode: reviewMode,
+      });
 
-    const reviewed = `function login(user: User) {
-  // Validate input
-  if (!user || !user.pass) {
-    throw new Error('Invalid credentials');
-  }
-  
-  // Security: Use hash comparison
-  const isValid = await bcrypt.compare(user.pass, hash);
-  
-  if (isValid) {
-    return true;
-  }
-  return false;
-}`;
+      setCurrentReview(review);
+      setCode(userMessage, review.reviewed_code || userMessage);
 
-    setCode(userMessage.includes('function') ? userMessage : originalCode, reviewed);
-    
-    setMessages(prev => [...prev, { 
-      role: 'ai', 
-      content: `${mockReview.summary}\n\n${mockReview.issues.map(i => `• **${i.severity}**: ${i.message}`).join('\n')}`
-    }]);
-    
-    setIsAnalyzing(false);
+      if (review.ai_feedback) {
+        const feedback = review.ai_feedback;
+        const aiMessage = `${feedback.summary || 'Review complete'}\n\n${feedback.issues?.map((i: any) => `• **${i.severity}**: ${i.message}`).join('\n') || ''
+          }`;
+        setMessages(prev => [...prev, { role: 'ai', content: aiMessage }]);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to create review');
+      setMessages(prev => [...prev, {
+        role: 'ai',
+        content: `Error: ${err.response?.data?.detail || 'Failed to analyze code'}`
+      }]);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!currentReview) return;
+    try {
+      await approvePR(currentReview.id, 'Approved via AI PR Reviewer');
+      alert('PR approved successfully!');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to approve PR');
+    }
+  };
+
+  const handleRequestChanges = async () => {
+    if (!currentReview) return;
+    const comment = prompt('Enter reason for changes:');
+    if (!comment) return;
+    try {
+      await requestChanges(currentReview.id, comment);
+      alert('Changes requested!');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to request changes');
+    }
+  };
+
+  const handleMerge = async () => {
+    if (!currentReview) return;
+    if (!confirm('Are you sure you want to merge this PR?')) return;
+    try {
+      await mergePR(currentReview.id, 'squash');
+      alert('PR merged successfully!');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to merge PR');
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -89,20 +115,27 @@ export default function Dashboard() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <GitPullRequest className="w-5 h-5 text-primary" />
-              <h1 className="font-semibold text-white">PR #42: Auth Fix</h1>
+              <h1 className="font-semibold text-white">
+                {currentReview ? `PR #${currentReview.pr_number || 'New'}` : 'New Review'}
+              </h1>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Open
-            </span>
+            {currentReview && (
+              <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${currentReview.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                  currentReview.status === 'processing' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                    'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                }`}>
+                {currentReview.status}
+              </span>
+            )}
           </div>
-          
+
           <div className="flex items-center gap-3">
             {/* Mode Toggle */}
             <div className="flex items-center gap-2 bg-background/50 px-3 py-1.5 rounded-lg border border-border">
               <span className={`text-xs font-medium transition-colors ${reviewMode === 'manual' ? 'text-white' : 'text-text-muted'}`}>
                 Manual
               </span>
-              <button 
+              <button
                 onClick={toggleMode}
                 className={`w-11 h-6 rounded-full relative transition-colors ${reviewMode === 'automatic' ? 'bg-primary' : 'bg-border'}`}
               >
@@ -113,25 +146,41 @@ export default function Dashboard() {
               </span>
             </div>
 
-            {reviewMode === 'manual' ? (
+            {currentReview && (
               <>
-                <Button variant="danger" size="sm" className="gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  Request Changes
-                </Button>
-                <Button variant="success" size="sm" className="gap-2">
-                  <CheckCircle className="w-4 h-4" />
-                  Approve
-                </Button>
+                {reviewMode === 'manual' ? (
+                  <>
+                    <Button variant="danger" size="sm" className="gap-2" onClick={handleRequestChanges}>
+                      <AlertCircle className="w-4 h-4" />
+                      Request Changes
+                    </Button>
+                    <Button variant="success" size="sm" className="gap-2" onClick={handleApprove}>
+                      <CheckCircle className="w-4 h-4" />
+                      Approve
+                    </Button>
+                    <Button variant="primary" size="sm" className="gap-2" onClick={handleMerge}>
+                      <GitPullRequest className="w-4 h-4" />
+                      Merge
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="outline" size="sm" className="gap-2" onClick={handleMerge}>
+                    <Zap className="w-4 h-4 text-yellow-500" />
+                    Auto-Merge Enabled
+                  </Button>
+                )}
               </>
-            ) : (
-              <Button variant="outline" size="sm" className="gap-2">
-                <Zap className="w-4 h-4 text-yellow-500" />
-                Auto-Merge Enabled
-              </Button>
             )}
           </div>
         </header>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mx-6 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="hover:text-white">×</button>
+          </div>
+        )}
 
         {/* Code Review Area */}
         <div className="flex-1 flex overflow-hidden">
@@ -146,11 +195,10 @@ export default function Dashboard() {
             <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-48">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-2xl px-4 py-2 rounded-lg ${
-                    msg.role === 'user' 
-                      ? 'bg-primary text-white' 
+                  <div className={`max-w-2xl px-4 py-2 rounded-lg ${msg.role === 'user'
+                      ? 'bg-primary text-white'
                       : 'bg-background border border-border text-text'
-                  }`}>
+                    }`}>
                     <p className="text-sm whitespace-pre-line">{msg.content}</p>
                   </div>
                 </div>
@@ -183,8 +231,8 @@ export default function Dashboard() {
                   className="w-full pl-12 pr-4 py-3 bg-background/50 border border-border rounded-lg text-text placeholder:text-text-muted/60 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                 />
               </div>
-              <Button onClick={handleReview} disabled={!chatInput.trim() || isAnalyzing} className="gap-2">
-                {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <Button onClick={handleReview} disabled={!chatInput.trim() || isAnalyzing || isLoading} className="gap-2">
+                {isAnalyzing || isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 Review
               </Button>
             </div>

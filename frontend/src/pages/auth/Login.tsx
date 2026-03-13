@@ -3,45 +3,37 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Mail, Lock, Github, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useStore();
-  const [loading, setLoading] = useState(false);
+  const { login, isLoading, error } = useStore();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.email) newErrors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Invalid email format';
-    if (!formData.password) newErrors.password = 'Password is required';
-    else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const errors: Record<string, string> = {};
+    if (!formData.email) errors.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = 'Invalid email format';
+    if (!formData.password) errors.password = 'Password is required';
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
-    setLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    login({ id: '1', name: 'Developer', email: formData.email });
-    setLoading(false);
-    navigate('/dashboard');
-  };
-
-  const handleGitHubLogin = () => {
-    // Implement GitHub OAuth
-    console.log('GitHub login');
+    try {
+      await login(formData.email, formData.password);
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Login error:', err);
+    }
   };
 
   return (
@@ -64,6 +56,12 @@ export default function Login() {
 
         <Card className="border-border/50 backdrop-blur-xl bg-surface/80">
           <CardContent className="p-6">
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
                 label="Email"
@@ -71,8 +69,11 @@ export default function Login() {
                 placeholder="name@example.com"
                 icon={<Mail className="w-5 h-5" />}
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                error={errors.email}
+                onChange={(e) => {
+                  setFormData({ ...formData, email: e.target.value });
+                  setValidationErrors({ ...validationErrors, email: '' });
+                }}
+                error={validationErrors.email}
               />
 
               <div className="space-y-2">
@@ -82,8 +83,11 @@ export default function Login() {
                   placeholder="••••••••"
                   icon={<Lock className="w-5 h-5" />}
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  error={errors.password}
+                  onChange={(e) => {
+                    setFormData({ ...formData, password: e.target.value });
+                    setValidationErrors({ ...validationErrors, password: '' });
+                  }}
+                  error={validationErrors.password}
                 />
                 <div className="flex justify-end">
                   <Link 
@@ -95,7 +99,7 @@ export default function Login() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" size="lg" loading={loading}>
+              <Button type="submit" className="w-full" size="lg" loading={isLoading}>
                 Sign In
               </Button>
             </form>
@@ -105,15 +109,11 @@ export default function Login() {
                 <div className="w-full border-t border-border"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-surface px-2 text-text-muted">Or continue with</span>
+                <span className="bg-surface px-2 text-text-muted">Coming Soon</span>
               </div>
             </div>
 
-            <Button 
-              variant="secondary" 
-              className="w-full" 
-              onClick={handleGitHubLogin}
-            >
+            <Button variant="secondary" className="w-full" disabled>
               <Github className="mr-2 h-5 w-5" />
               Sign in with GitHub
             </Button>
