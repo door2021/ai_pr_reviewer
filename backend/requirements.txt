@@ -20,6 +20,10 @@ bcrypt
 httpx
 
 # AI & ML
+langchain
+langchain-community
+langchain-huggingface
+langgraph
 huggingface_hub
 transformers
 torch
