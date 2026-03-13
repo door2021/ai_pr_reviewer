@@ -1,13 +1,14 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional, List
+
 class Settings(BaseSettings):
     APP_NAME: str = "AI PR Reviewer"
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
     VERSION: str = "2.0.0"
     
-    DATABASE_URL: str = "mysql+pymysql://root:password@localhost:3306/ai_pr"
+    DATABASE_URL: str = "mysql+pymysql://root:@localhost:3306/ai_pr"
     
     REDIS_URL: str = "redis://localhost:6379"
     
