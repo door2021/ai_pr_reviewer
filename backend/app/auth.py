@@ -26,6 +26,8 @@ class AuthService:
     def validate_password(password: str) -> tuple[bool, str]:
         if len(password) < 8:
             return False, "Password must be at least 8 characters"
+        if len(password.encode('utf-8')) > 72:
+            return False, "Password cannot exceed 72 characters"
         if not any(c.isupper() for c in password):
             return False, "Password must contain at least one uppercase letter"
         if not any(c.islower() for c in password):

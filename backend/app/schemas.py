@@ -30,7 +30,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=8, max_length=72, description="Password must be between 8 and 72 characters")
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None

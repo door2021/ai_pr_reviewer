@@ -20,6 +20,7 @@ export default function Login() {
     if (!formData.email) errors.email = 'Email is required';
     else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = 'Invalid email format';
     if (!formData.password) errors.password = 'Password is required';
+    else if (formData.password.length > 72) errors.password = 'Password cannot exceed 72 characters';
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
