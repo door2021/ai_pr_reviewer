@@ -11,7 +11,29 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ onGitHubClick }: SidebarProps) {
-  const { chats, githubConfigured, setActiveChat, activeChatId, user, logout } = useStore();
+  const { 
+    chats, 
+    githubConfigured, 
+    setActiveChat, 
+    activeChatId, 
+    user, 
+    logout 
+  } = useStore();
+
+  // Safe function to get user initials
+  const getUserInitials = () => {
+    if (!user?.full_name && !user?.name && !user?.email) return 'U';
+    
+    const name = user?.full_name || user?.name || user?.email || 'User';
+    const firstChar = name.charAt(0).toUpperCase();
+    
+    // If it's an email, get first char before @
+    if (name.includes('@')) {
+      return name.split('@')[0].charAt(0).toUpperCase();
+    }
+    
+    return firstChar;
+  };
 
   return (
     <div className="w-72 bg-surface/90 backdrop-blur-xl border-r border-border flex flex-col h-full">
@@ -51,30 +73,36 @@ export default function Sidebar({ onGitHubClick }: SidebarProps) {
           </Button>
         </div>
         
-        {chats.map((chat: Chat) => (
-          <button
-            key={chat.id}
-            onClick={() => setActiveChat(chat.id)}
-            className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all group ${
-              activeChatId === chat.id 
-                ? 'bg-primary/10 border border-primary/20' 
-                : 'hover:bg-surface border border-transparent'
-            }`}
-          >
-            <div className={`mt-0.5 ${activeChatId === chat.id ? 'text-primary' : 'text-text-muted group-hover:text-text'}`}>
-              <MessageSquare className="w-4 h-4" />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-sm font-medium truncate ${activeChatId === chat.id ? 'text-white' : 'text-text'}`}>
-                {chat.title}
-              </p>
-              <p className="text-xs text-text-muted mt-0.5">{chat.date}</p>
-            </div>
-            {activeChatId === chat.id && (
-              <ChevronRight className="w-4 h-4 text-primary" />
-            )}
-          </button>
-        ))}
+        {chats && chats.length > 0 ? (
+          chats.map((chat: Chat) => (
+            <button
+              key={chat.id}
+              onClick={() => setActiveChat(chat.id)}
+              className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all group ${
+                activeChatId === chat.id 
+                  ? 'bg-primary/10 border border-primary/20' 
+                  : 'hover:bg-surface border border-transparent'
+              }`}
+            >
+              <div className={`mt-0.5 ${activeChatId === chat.id ? 'text-primary' : 'text-text-muted group-hover:text-text'}`}>
+                <MessageSquare className="w-4 h-4" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className={`text-sm font-medium truncate ${activeChatId === chat.id ? 'text-white' : 'text-text'}`}>
+                  {chat.title}
+                </p>
+                <p className="text-xs text-text-muted mt-0.5">{chat.date}</p>
+              </div>
+              {activeChatId === chat.id && (
+                <ChevronRight className="w-4 h-4 text-primary" />
+              )}
+            </button>
+          ))
+        ) : (
+          <div className="px-3 py-4 text-center text-text-muted text-sm">
+            No reviews yet. Start by pasting code below!
+          </div>
+        )}
 
         {/* GitHub Section */}
         <div className="mt-6 pt-6 border-t border-border">
@@ -93,10 +121,6 @@ export default function Sidebar({ onGitHubClick }: SidebarProps) {
                 <GitPullRequest className="w-4 h-4 text-text-muted" />
                 <span className="text-sm text-text">ai-pr-reviewer</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/50 border border-border">
-                <GitPullRequest className="w-4 h-4 text-text-muted" />
-                <span className="text-sm text-text">frontend-app</span>
-              </div>
             </div>
           )}
         </div>
@@ -106,11 +130,15 @@ export default function Sidebar({ onGitHubClick }: SidebarProps) {
       <div className="p-4 border-t border-border">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-9 h-9 rounded-full gradient-primary flex items-center justify-center text-white font-semibold text-sm">
-            {user?.name.charAt(0).toUpperCase()}
+            {getUserInitials()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-            <p className="text-xs text-text-muted truncate">{user?.email}</p>
+            <p className="text-sm font-medium text-white truncate">
+              {user?.full_name || user?.name || user?.email?.split('@')[0] || 'User'}
+            </p>
+            <p className="text-xs text-text-muted truncate">
+              {user?.email || 'No email'}
+            </p>
           </div>
         </div>
         <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-text-muted" onClick={logout}>
