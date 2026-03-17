@@ -1,108 +1,101 @@
 import { create } from 'zustand';
-import { User, Chat, ReviewMode, SidebarMode, ReviewType } from '@/types';
-import { authAPI, reviewsAPI, githubAPI, prAPI } from '@/lib/api';
-
-interface Repo {
-  id: number;
-  name: string;
-  full_name: string;
-  html_url: string;
-  private: boolean;
-}
-
-interface PR {
-  number: number;
-  title: string;
-  url: string;
-  state: string;
-  head_ref: string;
-  base_ref: string;
-  created_at: string;
-  user: { login: string };
-}
+import { User, GitHubAccount, GitHubRepo, GitHubPR, Review } from '@/types';
+import { authAPI, usersAPI, githubAPI, reviewsAPI } from '@/lib/api';
 
 interface AppState {
+  // Auth State
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
 
-  sidebarMode: SidebarMode;
-  chats: Chat[];
-  activeChatId: number | null;
+  // GitHub State
+  githubAccounts: GitHubAccount[];
+  importedRepos: GitHubRepo[];
+  selectedAccount: GitHubAccount | null;
+  selectedRepo: GitHubRepo | null;
+  selectedPR: GitHubPR | null;
+  repoPRs: GitHubPR[];
 
-  githubConnected: boolean;
-  githubUsername: string | null;
-  availableRepos: Repo[];
-  importedRepos: Repo[];
-  selectedRepo: string | null;
-  repoPRs: PR[];
-  selectedPR: PR | null;
-
-  reviewMode: ReviewMode;
-  reviewType: ReviewType;
+  // Review State
+  currentReview: Review | null;
   originalCode: string;
   reviewedCode: string;
-  currentReview: any | null;
+  isReviewing: boolean;
+  reviewMode: 'manual' | 'automatic';
 
+  // UI State
+  sidebarOpen: boolean;
+  expandedAccounts: Set<number>;
+  expandedRepos: Set<number>;
+
+  // Actions - Auth
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
-  checkGitHubConnection: () => Promise<void>;
-  connectGitHub: (token: string) => Promise<void>;
-  disconnectGitHub: () => Promise<void>;
-  fetchAvailableRepos: () => Promise<void>;
-  importRepos: (repoFullNames: string[]) => Promise<void>;
-  fetchImportedRepos: () => Promise<void>;
-  fetchRepoPRs: (repoFullName: string) => Promise<void>;
-  selectRepo: (repoFullName: string | null) => void;
-  selectPR: (pr: PR | null) => void;
+  loadUserProfile: () => Promise<void>;
+
+  // Actions - GitHub
+  loadGitHubAccounts: () => Promise<void>;
+  connectGitHubAccount: (token: string, label?: string) => Promise<void>;
+  disconnectGitHubAccount: (accountId: number) => Promise<void>;
+  loadAccountRepos: (accountId: number) => Promise<GitHubRepo[]>;
+  importRepos: (accountId: number, repoFullNames: string[]) => Promise<void>;
+  loadImportedRepos: () => Promise<void>;
+  syncRepo: (repoId: number) => Promise<void>;
+  loadRepoPRs: (repoId: number, forceSync?: boolean) => Promise<void>;
+
+  // Actions - Review
+  selectAccount: (account: GitHubAccount | null) => void;
+  selectRepo: (repo: GitHubRepo | null) => void;
+  selectPR: (pr: GitHubPR | null) => void;
+  loadPRReview: (pr: GitHubPR, repo: GitHubRepo, account: GitHubAccount) => Promise<void>;
   createReview: (data: any) => Promise<void>;
-  loadReviews: () => Promise<void>;
-  approvePR: (reviewId: number, comment?: string) => Promise<void>;
-  requestChanges: (reviewId: number, comment: string) => Promise<void>;
-  mergePR: (reviewId: number, method?: string) => Promise<void>;
-  toggleMode: () => void;
   setCode: (original: string, reviewed: string) => void;
-  setCurrentReview: (review: any) => void;
-  setSidebarMode: (mode: SidebarMode) => void;
+  setCurrentReview: (review: Review | null) => void;
+
+  // Actions - UI
+  toggleAccount: (accountId: number) => void;
+  toggleRepo: (repoId: number) => void;
+  setSidebarOpen: (open: boolean) => void;
   setError: (error: string | null) => void;
-  setActiveChat: (id: number) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
-
+  // Initial State
   user: null,
   isAuthenticated: false,
   isLoading: false,
   error: null,
-  sidebarMode: 'chats',
-  chats: [],
-  activeChatId: null,
-  githubConnected: false,
-  githubUsername: null,
-  availableRepos: [],
+  githubAccounts: [],
   importedRepos: [],
+  selectedAccount: null,
   selectedRepo: null,
-  repoPRs: [],
   selectedPR: null,
-  reviewMode: 'manual',
-  reviewType: 'pasted',
+  repoPRs: [],
+  currentReview: null,
   originalCode: '',
   reviewedCode: '',
-  currentReview: null,
+  isReviewing: false,
+  reviewMode: 'manual',
+  sidebarOpen: true,
+  expandedAccounts: new Set(),
+  expandedRepos: new Set(),
+
+  // ===========================================
+  // AUTH ACTIONS
+  // ===========================================
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
     try {
       const data = await authAPI.login(email, password);
       localStorage.setItem('access_token', data.access_token);
-      const user = await authAPI.getMe();
-      localStorage.setItem('user', JSON.stringify(user));
-      set({ user, isAuthenticated: true, isLoading: false });
-      await get().checkGitHubConnection();
-      await get().loadReviews();
+      await get().loadUserProfile();
+      await get().loadGitHubAccounts();
+      await get().loadImportedRepos();
+      set({ isAuthenticated: true, isLoading: false });
     } catch (error: any) {
       set({ error: error.response?.data?.detail || 'Login failed', isLoading: false });
       throw error;
@@ -126,29 +119,27 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user');
       set({
         user: null,
         isAuthenticated: false,
-        chats: [],
+        githubAccounts: [],
+        importedRepos: [],
+        selectedAccount: null,
+        selectedRepo: null,
+        selectedPR: null,
         currentReview: null,
-        githubConnected: false,
-        githubUsername: null,
       });
     }
   },
 
   checkAuth: async () => {
     const token = localStorage.getItem('access_token');
-    const userStr = localStorage.getItem('user');
-
-    if (token && userStr) {
+    if (token) {
       try {
-        const user = JSON.parse(userStr);
-        set({ user, isAuthenticated: true });
-        await get().checkGitHubConnection();
-        await get().loadReviews();
+        await get().loadUserProfile();
+        await get().loadGitHubAccounts();
+        await get().loadImportedRepos();
+        set({ isAuthenticated: true });
       } catch (error) {
         localStorage.removeItem('access_token');
         localStorage.removeItem('user');
@@ -157,27 +148,34 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  checkGitHubConnection: async () => {
+  loadUserProfile: async () => {
     try {
-      const status = await githubAPI.checkConnection();
-      set({
-        githubConnected: status.connected,
-        githubUsername: status.username
-      });
-      if (status.connected && status.has_imported_repos) {
-        await get().fetchImportedRepos();
-      }
+      const user = await usersAPI.getProfile();
+      set({ user, reviewMode: user.review_mode });
+      localStorage.setItem('user', JSON.stringify(user));
     } catch (error) {
-      console.error('GitHub connection check failed:', error);
+      console.error('Failed to load user profile:', error);
     }
   },
 
-  connectGitHub: async (token: string) => {
+  // ===========================================
+  // GITHUB ACTIONS
+  // ===========================================
+
+  loadGitHubAccounts: async () => {
+    try {
+      const accounts = await githubAPI.getAccounts();
+      set({ githubAccounts: accounts });
+    } catch (error) {
+      console.error('Failed to load GitHub accounts:', error);
+    }
+  },
+
+  connectGitHubAccount: async (token: string, label?: string) => {
     set({ isLoading: true, error: null });
     try {
-      await githubAPI.connect(token);
-      await get().checkGitHubConnection();
-      await get().fetchAvailableRepos();
+      await githubAPI.connectAccount(token, label);
+      await get().loadGitHubAccounts();
       set({ isLoading: false });
     } catch (error: any) {
       set({ error: error.response?.data?.detail || 'Failed to connect GitHub', isLoading: false });
@@ -185,37 +183,31 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  disconnectGitHub: async () => {
+  disconnectGitHubAccount: async (accountId: number) => {
     try {
-      await githubAPI.disconnect();
-      set({
-        githubConnected: false,
-        githubUsername: null,
-        availableRepos: [],
-        importedRepos: [],
-        selectedRepo: null,
-        repoPRs: [],
-        selectedPR: null,
-      });
+      await githubAPI.disconnectAccount(accountId);
+      await get().loadGitHubAccounts();
+      await get().loadImportedRepos();
     } catch (error) {
-      console.error('Disconnect error:', error);
+      console.error('Failed to disconnect GitHub:', error);
     }
   },
 
-  fetchAvailableRepos: async () => {
+  loadAccountRepos: async (accountId: number) => {
     try {
-      const repos = await githubAPI.getAvailableRepos();
-      set({ availableRepos: repos });
+      const repos = await githubAPI.getAccountRepos(accountId);
+      return repos;
     } catch (error) {
-      console.error('Failed to fetch repos:', error);
+      console.error('Failed to load account repos:', error);
+      return [];
     }
   },
 
-  importRepos: async (repoFullNames: string[]) => {
+  importRepos: async (accountId: number, repoFullNames: string[]) => {
     set({ isLoading: true, error: null });
     try {
-      await githubAPI.importRepos(repoFullNames);
-      await get().fetchImportedRepos();
+      await githubAPI.importRepos(accountId, repoFullNames);
+      await get().loadImportedRepos();
       set({ isLoading: false });
     } catch (error: any) {
       set({ error: error.response?.data?.detail || 'Failed to import repos', isLoading: false });
@@ -223,112 +215,134 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchImportedRepos: async () => {
+  loadImportedRepos: async () => {
     try {
       const repos = await githubAPI.getImportedRepos();
       set({ importedRepos: repos });
     } catch (error) {
-      console.error('Failed to fetch imported repos:', error);
+      console.error('Failed to load imported repos:', error);
     }
   },
 
-  fetchRepoPRs: async (repoFullName: string) => {
+  syncRepo: async (repoId: number) => {
     try {
-      const prs = await githubAPI.getRepoPRs(repoFullName);
-      set({ repoPRs: prs, selectedRepo: repoFullName });
+      await githubAPI.syncRepo(repoId);
+      await get().loadRepoPRs(repoId, true);
     } catch (error) {
-      console.error('Failed to fetch PRs:', error);
+      console.error('Failed to sync repo:', error);
     }
   },
 
-  selectRepo: (repoFullName: string | null) => {
-    set({ selectedRepo: repoFullName });
-    if (repoFullName) {
-      get().fetchRepoPRs(repoFullName);
+  loadRepoPRs: async (repoId: number, forceSync = false) => {
+    try {
+      const prs = await githubAPI.getRepoPRs(repoId, forceSync);
+      set({ repoPRs: prs });
+    } catch (error) {
+      console.error('Failed to load repo PRs:', error);
+      set({ repoPRs: [] });
     }
   },
 
-  selectPR: (pr: PR | null) => {
+  // ===========================================
+  // REVIEW ACTIONS
+  // ===========================================
+
+  selectAccount: (account: GitHubAccount | null) => {
+    set({ selectedAccount: account });
+  },
+
+  selectRepo: (repo: GitHubRepo | null) => {
+    set({ selectedRepo: repo });
+    if (repo) {
+      get().loadRepoPRs(repo.id);
+    }
+  },
+
+  selectPR: (pr: GitHubPR | null) => {
     set({ selectedPR: pr });
   },
 
+  loadPRReview: async (pr: GitHubPR, repo: GitHubRepo, account: GitHubAccount) => {
+    set({ isReviewing: true, error: null });
+    try {
+      const review = await reviewsAPI.create({
+        pr_url: `https://github.com/${repo.repo_full_name}/pull/${pr.pr_number}`,
+        code_diff: '',
+        original_code: '',
+        github_account_id: account.id,
+        imported_repo_id: repo.id,
+        pr_id: pr.id,
+        pr_number: pr.pr_number,
+        repo_full_name: repo.repo_full_name,
+        branch_name: pr.head_ref,
+        target_branch: pr.base_ref,
+        pr_title: pr.title,
+      });
+
+      set({
+        currentReview: review,
+        originalCode: review.original_code,
+        reviewedCode: review.reviewed_code || '',
+        isReviewing: false,
+      });
+    } catch (error: any) {
+      set({ error: error.response?.data?.detail || 'Failed to load PR review', isReviewing: false });
+    }
+  },
+
   createReview: async (data: any) => {
-    set({ isLoading: true, error: null });
+    set({ isReviewing: true, error: null });
     try {
       const review = await reviewsAPI.create(data);
-      set({ currentReview: review, isLoading: false });
-      await get().loadReviews();
+      set({
+        currentReview: review,
+        originalCode: review.original_code,
+        reviewedCode: review.reviewed_code || '',
+        isReviewing: false,
+      });
     } catch (error: any) {
-      set({ error: error.response?.data?.detail || 'Failed to create review', isLoading: false });
+      set({ error: error.response?.data?.detail || 'Failed to create review', isReviewing: false });
       throw error;
     }
   },
 
-  loadReviews: async () => {
-    try {
-      const reviews = await reviewsAPI.getAll();
-      const chats = reviews.map((r: any) => ({
-        id: r.id,
-        title: r.review_type === 'imported'
-          ? `${r.repo_full_name}/PR #${r.pr_number}`
-          : `Review #${r.id}`,
-        date: new Date(r.created_at).toLocaleDateString(),
-        review_type: r.review_type,
-      }));
-      set({ chats });
-    } catch (error) {
-      console.error('Failed to load reviews:', error);
-    }
+  setCode: (original: string, reviewed: string) => {
+    set({ originalCode: original, reviewedCode: reviewed });
   },
 
-  approvePR: async (reviewId: number, comment?: string) => {
-    set({ isLoading: true, error: null });
-    try {
-      await prAPI.approve(reviewId, comment);
-      await get().loadReviews();
-      set({ isLoading: false });
-    } catch (error: any) {
-      set({ error: error.response?.data?.detail || 'Failed to approve PR', isLoading: false });
-      throw error;
-    }
+  setCurrentReview: (review: Review | null) => {
+    set({ currentReview: review });
   },
 
-  requestChanges: async (reviewId: number, comment: string) => {
-    set({ isLoading: true, error: null });
-    try {
-      await prAPI.requestChanges(reviewId, comment);
-      await get().loadReviews();
-      set({ isLoading: false });
-    } catch (error: any) {
-      set({ error: error.response?.data?.detail || 'Failed to request changes', isLoading: false });
-      throw error;
+  // ===========================================
+  // UI ACTIONS
+  // ===========================================
+
+  toggleAccount: (accountId: number) => {
+    const newExpanded = new Set(get().expandedAccounts);
+    if (newExpanded.has(accountId)) {
+      newExpanded.delete(accountId);
+    } else {
+      newExpanded.add(accountId);
     }
+    set({ expandedAccounts: newExpanded });
   },
 
-  mergePR: async (reviewId: number, method: string = 'squash') => {
-    set({ isLoading: true, error: null });
-    try {
-      await prAPI.merge(reviewId, method as any);
-      await get().loadReviews();
-      set({ isLoading: false });
-    } catch (error: any) {
-      set({ error: error.response?.data?.detail || 'Failed to merge PR', isLoading: false });
-      throw error;
+  toggleRepo: (repoId: number) => {
+    const newExpanded = new Set(get().expandedRepos);
+    if (newExpanded.has(repoId)) {
+      newExpanded.delete(repoId);
+    } else {
+      newExpanded.add(repoId);
     }
+    set({ expandedRepos: newExpanded });
   },
 
-  toggleMode: () => set((state) => ({
-    reviewMode: state.reviewMode === 'manual' ? 'automatic' : 'manual'
-  })),
+  setSidebarOpen: (open: boolean) => {
+    set({ sidebarOpen: open });
+  },
 
-  setCode: (original: string, reviewed: string) =>
-    set({ originalCode: original, reviewedCode: reviewed }),
-
-  setCurrentReview: (review: any) => set({ currentReview: review }),
-
-  setSidebarMode: (mode: SidebarMode) => set({ sidebarMode: mode }),
-
-  setActiveChat: (id: number) => set({ activeChatId: id }),
-
-  setError: (error: string | null) => set({ error }),
+  setError: (error: string | null) => {
+    set({ error });
+  },
 }));

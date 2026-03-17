@@ -1,26 +1,36 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Mail, Lock, Github, Loader2 } from 'lucide-react';
+import { Mail, Lock, Github, Loader2, CheckCircle } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, isLoading, error } = useStore();
+  const location = useLocation();
+  const { login, isLoading, error, setError } = useStore();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // Get success message from navigation state (after signup)
+  useEffect(() => {
+    if (location.state?.message) {
+      setSuccessMessage(location.state.message);
+      // Clear the state
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   const validate = () => {
     const errors: Record<string, string> = {};
     if (!formData.email) errors.email = 'Email is required';
     else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = 'Invalid email format';
     if (!formData.password) errors.password = 'Password is required';
-    else if (formData.password.length > 72) errors.password = 'Password cannot exceed 72 characters';
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -31,6 +41,7 @@ export default function Login() {
 
     try {
       await login(formData.email, formData.password);
+      // ✅ SUCCESS: Redirect to dashboard (NO GitHub modal auto-open)
       navigate('/dashboard');
     } catch (err) {
       console.error('Login error:', err);
@@ -39,7 +50,6 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Effects */}
       <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-purple-500/10" />
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl" />
       <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl" />
@@ -57,6 +67,15 @@ export default function Login() {
 
         <Card className="border-border/50 backdrop-blur-xl bg-surface/80">
           <CardContent className="p-6">
+            {/* Success Message (after signup) */}
+            {successMessage && (
+              <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm flex items-center gap-2">
+                <CheckCircle className="w-4 h-4" />
+                {successMessage}
+              </div>
+            )}
+
+            {/* Error Message */}
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
                 {error}
@@ -73,6 +92,7 @@ export default function Login() {
                 onChange={(e) => {
                   setFormData({ ...formData, email: e.target.value });
                   setValidationErrors({ ...validationErrors, email: '' });
+                  setError(null);
                 }}
                 error={validationErrors.email}
               />
@@ -87,6 +107,7 @@ export default function Login() {
                   onChange={(e) => {
                     setFormData({ ...formData, password: e.target.value });
                     setValidationErrors({ ...validationErrors, password: '' });
+                    setError(null);
                   }}
                   error={validationErrors.password}
                 />

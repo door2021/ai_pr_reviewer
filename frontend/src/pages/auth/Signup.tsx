@@ -23,8 +23,12 @@ export default function Signup() {
     if (!formData.email) errors.email = 'Email is required';
     else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = 'Invalid email format';
     if (!formData.password) errors.password = 'Password is required';
-    else if (formData.password.length < 8) errors.password = 'Password must be at least 8 characters';
-    else if (formData.password.length > 72) errors.password = 'Password cannot exceed 72 characters';
+    else if (formData.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters';
+    }
+    else if (formData.password.length > 72) {
+      errors.password = 'Password cannot exceed 72 characters';
+    }
     if (formData.password !== formData.confirmPassword) {
       errors.confirmPassword = 'Passwords do not match';
     }
@@ -38,7 +42,12 @@ export default function Signup() {
 
     try {
       await signup(formData.email, formData.password, formData.name);
-      navigate('/dashboard');
+      // ✅ SUCCESS: Redirect to login (NOT dashboard, NOT GitHub connect)
+      navigate('/login', { 
+        state: { 
+          message: 'Account created successfully! Please sign in.' 
+        } 
+      });
     } catch (err) {
       console.error('Signup error:', err);
     }
@@ -129,7 +138,7 @@ export default function Signup() {
                 <div className="w-full border-t border-border"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-surface px-2 text-text-muted">Coming Soon</span>
+                <span className="bg-surface px-2 text-text-muted">Or sign up with</span>
               </div>
             </div>
 

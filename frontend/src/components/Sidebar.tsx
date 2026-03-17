@@ -1,59 +1,74 @@
 import { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { 
-  MessageSquare, FolderGit2, Plus, Github, Settings, 
-  LogOut, ChevronRight, ChevronDown, Sparkles, GitPullRequest,
-  Folder, X, Check
+  Folder, ChevronRight, ChevronDown, GitPullRequest, 
+  Github, RefreshCw, Plus, LogOut, Settings, User,
+  AlertCircle, CheckCircle, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Repo, PR } from '@/types';
+import { GitHubImportModal } from './GitHubModal';
+import { GitHubAccount, GitHubRepo, GitHubPR } from '@/types';
 
-interface SidebarProps {
-  onGitHubClick: () => void;
-}
-
-export default function Sidebar({ onGitHubClick }: SidebarProps) {
-  const { 
-    chats, 
-    githubConnected, 
-    githubUsername,
-    importedRepos, 
+export default function Sidebar() {
+  const {
+    user,
+    githubAccounts,
+    importedRepos,
+    selectedAccount,
     selectedRepo,
+    selectedPR,
+    expandedAccounts,
+    expandedRepos,
     repoPRs,
-    activeChatId, 
-    user, 
+    isLoading,
+    error,
     logout,
-    sidebarMode,
-    setSidebarMode,
-    setActiveChat,
+    selectAccount,
     selectRepo,
     selectPR,
-    currentReview
+    loadPRReview,
+    toggleAccount,
+    toggleRepo,
+    syncRepo,
+    disconnectGitHubAccount,
+    setError,
   } = useStore();
 
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
-  const [selectedPRNumber, setSelectedPRNumber] = useState<number | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [syncingRepoId, setSyncingRepoId] = useState<number | null>(null);
 
-  const toggleRepo = (repoFullName: string) => {
-    const newExpanded = new Set(expandedRepos);
-    if (newExpanded.has(repoFullName)) {
-      newExpanded.delete(repoFullName);
-    } else {
-      newExpanded.add(repoFullName);
-    }
-    setExpandedRepos(newExpanded);
-    selectRepo(repoFullName);
+  const handleAccountClick = (account: GitHubAccount) => {
+    toggleAccount(account.id);
+    selectAccount(account);
   };
 
-  const handlePRClick = (repoFullName: string, pr: PR) => {
-    setSelectedPRNumber(pr.number);
+  const handleRepoClick = async (repo: GitHubRepo) => {
+    toggleRepo(repo.id);
+    selectRepo(repo);
+  };
+
+  const handlePRClick = async (pr: GitHubPR, repo: GitHubRepo, account: GitHubAccount) => {
     selectPR(pr);
-    console.log('Opening PR:', repoFullName, pr.number);
+    await loadPRReview(pr, repo, account);
+  };
+
+  const handleSync = async (repoId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSyncingRepoId(repoId);
+    await syncRepo(repoId);
+    setSyncingRepoId(null);
+  };
+
+  const handleDisconnect = async (accountId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Disconnect this GitHub account? All imported repos will be removed.')) {
+      await disconnectGitHubAccount(accountId);
+    }
   };
 
   const getUserInitials = () => {
-    if (!user?.full_name && !user?.name && !user?.email) return 'U';
-    const name = user?.full_name || user?.name || user?.email || 'User';
+    if (!user) return 'U';
+    const name = user.full_name || user.email || 'User';
     if (name.includes('@')) {
       return name.split('@')[0].charAt(0).toUpperCase();
     }
@@ -64,232 +79,206 @@ export default function Sidebar({ onGitHubClick }: SidebarProps) {
     <div className="w-72 bg-surface/90 backdrop-blur-xl border-r border-border flex flex-col h-full">
       {/* Header */}
       <div className="h-16 border-b border-border flex items-center justify-between px-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-white" />
+            <GitPullRequest className="w-5 h-5 text-white" />
           </div>
           <span className="font-bold text-lg text-white">AI Reviewer</span>
         </div>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <Settings className="w-4 h-4" />
+      </div>
+
+      {/* Import Repo Button */}
+      <div className="p-3 border-b border-border">
+        <Button
+          variant="primary"
+          size="sm"
+          className="w-full justify-start gap-2"
+          onClick={() => setIsImportModalOpen(true)}
+        >
+          <Plus className="w-4 h-4" />
+          Import Repo
         </Button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-border">
-        <button 
-          onClick={() => setSidebarMode('chats')}
-          className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-            sidebarMode === 'chats' 
-              ? 'text-primary border-b-2 border-primary' 
-              : 'text-text-muted hover:text-text'
-          }`}
-        >
-          <MessageSquare className="w-4 h-4" />
-          Chats
-        </button>
-        <button 
-          onClick={() => setSidebarMode('files')}
-          className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-            sidebarMode === 'files' 
-              ? 'text-primary border-b-2 border-primary' 
-              : 'text-text-muted hover:text-text'
-          }`}
-        >
-          <FolderGit2 className="w-4 h-4" />
-          Files
-        </button>
-      </div>
+      {/* Error Display */}
+      {error && (
+        <div className="mx-3 mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
+          <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto hover:text-white">×</button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-3">
-        {/* CHATS TAB */}
-        {sidebarMode === 'chats' && (
-          <div className="space-y-1">
-            <div className="flex items-center justify-between px-2 py-2 mb-2">
-              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-                Recent Reviews
-              </span>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                <Plus className="w-3.5 h-3.5" />
-              </Button>
+        {githubAccounts.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 rounded-full bg-surface/50 flex items-center justify-center mx-auto mb-3">
+              <Github className="w-6 h-6 text-text-muted" />
             </div>
-            
-            {chats && chats.length > 0 ? (
-              chats.map((chat) => (
+            <p className="text-sm text-text-muted mb-4">No GitHub accounts connected</p>
+            <Button variant="outline" size="sm" onClick={() => setIsImportModalOpen(true)}>
+              Connect GitHub Account
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {githubAccounts.map((account) => (
+              <div key={account.id} className="space-y-1">
+                {/* Account Header */}
                 <button
-                  key={chat.id}
-                  onClick={() => setActiveChat(chat.id)}
-                  className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all group ${
-                    activeChatId === chat.id 
-                      ? 'bg-primary/10 border border-primary/20' 
+                  onClick={() => handleAccountClick(account)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
+                    selectedAccount?.id === account.id
+                      ? 'bg-primary/10 border border-primary/20'
                       : 'hover:bg-surface border border-transparent'
                   }`}
                 >
-                  <div className={`mt-0.5 ${activeChatId === chat.id ? 'text-primary' : 'text-text-muted group-hover:text-text'}`}>
-                    <MessageSquare className="w-4 h-4" />
+                  {expandedAccounts.has(account.id) ? (
+                    <ChevronDown className="w-4 h-4 text-text-muted" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-text-muted" />
+                  )}
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-600 to-gray-800 flex items-center justify-center">
+                    <span className="text-xs text-white font-semibold">
+                      {account.github_username.charAt(0).toUpperCase()}
+                    </span>
                   </div>
                   <div className="flex-1 text-left min-w-0">
-                    <p className={`text-sm font-medium truncate ${activeChatId === chat.id ? 'text-white' : 'text-text'}`}>
-                      {chat.title}
+                    <p className="text-sm font-medium text-text truncate">
+                      @{account.github_username}
                     </p>
-                    <p className="text-xs text-text-muted mt-0.5">{chat.date}</p>
-                  </div>
-                  {activeChatId === chat.id && (
-                    <ChevronRight className="w-4 h-4 text-primary" />
-                  )}
-                </button>
-              ))
-            ) : (
-              <div className="px-3 py-4 text-center text-text-muted text-sm">
-                No reviews yet. Start by pasting code below!
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* FILES TAB */}
-        {sidebarMode === 'files' && (
-          <div className="space-y-2">
-            {/* GitHub Connection Status */}
-            <div className="px-2 py-2 mb-3">
-              {githubConnected ? (
-                <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                  <div className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs text-emerald-400">Connected</span>
-                  </div>
-                  <button 
-                    onClick={onGitHubClick}
-                    className="text-xs text-text-muted hover:text-text"
-                  >
-                    Manage
-                  </button>
-                </div>
-              ) : (
-                <Button 
-                  variant="primary" 
-                  size="sm" 
-                  className="w-full justify-start gap-2"
-                  onClick={onGitHubClick}
-                >
-                  <Github className="w-4 h-4" />
-                  Connect GitHub
-                </Button>
-              )}
-            </div>
-
-            {/* Imported Repos */}
-            {importedRepos && importedRepos.length > 0 ? (
-              <div>
-                <div className="flex items-center justify-between px-2 py-2 mb-2">
-                  <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-                    Imported Repos
-                  </span>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 w-6 p-0"
-                    onClick={onGitHubClick}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-
-                {importedRepos.map((repo: Repo) => (
-                  <div key={repo.id} className="mb-1">
-                    {/* Repo Header */}
-                    <button
-                      onClick={() => toggleRepo(repo.full_name)}
-                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
-                        selectedRepo === repo.full_name
-                          ? 'bg-primary/10 border border-primary/20'
-                          : 'hover:bg-surface border border-transparent'
-                      }`}
-                    >
-                      {expandedRepos.has(repo.full_name) ? (
-                        <ChevronDown className="w-4 h-4 text-text-muted" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-text-muted" />
-                      )}
-                      <Folder className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium text-text flex-1 text-left truncate">
-                        {repo.name}
-                      </span>
-                      {repo.private && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-surface text-text-muted border border-border">
-                          Private
-                        </span>
-                      )}
-                    </button>
-
-                    {/* PR List (when expanded) */}
-                    {expandedRepos.has(repo.full_name) && (
-                      <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-3">
-                        {repoPRs && repoPRs.length > 0 ? (
-                          repoPRs.map((pr: PR) => (
-                            <button
-                              key={pr.number}
-                              onClick={() => handlePRClick(repo.full_name, pr)}
-                              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all ${
-                                selectedPRNumber === pr.number
-                                  ? 'bg-primary/10 border border-primary/20'
-                                  : 'hover:bg-surface border border-transparent'
-                              }`}
-                            >
-                              <GitPullRequest className="w-3.5 h-3.5 text-text-muted" />
-                              <div className="flex-1 text-left min-w-0">
-                                <p className="text-xs font-medium text-text truncate">
-                                  #{pr.number} {pr.title}
-                                </p>
-                                <p className="text-xs text-text-muted truncate">
-                                  {pr.head_ref} → {pr.base_ref}
-                                </p>
-                              </div>
-                              {pr.state === 'open' && (
-                                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                              )}
-                            </button>
-                          ))
-                        ) : (
-                          <div className="px-2 py-2 text-xs text-text-muted">
-                            No open PRs
-                          </div>
-                        )}
-                      </div>
+                    {account.account_label && (
+                      <p className="text-xs text-text-muted truncate">{account.account_label}</p>
                     )}
                   </div>
-                ))}
+                  {!account.is_token_valid && (
+                    <AlertCircle className="w-4 h-4 text-yellow-500" title="Token expired" />
+                  )}
+                  <button
+                    onClick={(e) => handleDisconnect(account.id, e)}
+                    className="p-1 hover:bg-red-500/20 rounded"
+                    title="Disconnect"
+                  >
+                    <X className="w-3 h-3 text-text-muted hover:text-red-400" />
+                  </button>
+                </button>
+
+                {/* Repos List */}
+                {expandedAccounts.has(account.id) && (
+                  <div className="ml-4 space-y-1 border-l-2 border-border pl-3">
+                    {importedRepos
+                      .filter((repo) => repo.github_account_id === account.id && repo.is_active)
+                      .map((repo) => (
+                        <div key={repo.id} className="space-y-1">
+                          {/* Repo Header */}
+                          <button
+                            onClick={() => handleRepoClick(repo)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all ${
+                              selectedRepo?.id === repo.id
+                                ? 'bg-primary/10 border border-primary/20'
+                                : 'hover:bg-surface border border-transparent'
+                            }`}
+                          >
+                            {expandedRepos.has(repo.id) ? (
+                              <ChevronDown className="w-3 h-3 text-text-muted" />
+                            ) : (
+                              <ChevronRight className="w-3 h-3 text-text-muted" />
+                            )}
+                            <Folder className="w-3 h-3 text-primary" />
+                            <span className="text-xs font-medium text-text flex-1 text-left truncate">
+                              {repo.repo_name}
+                            </span>
+                            <button
+                              onClick={(e) => handleSync(repo.id, e)}
+                              className="p-0.5 hover:bg-surface rounded"
+                              title="Sync PRs"
+                              disabled={syncingRepoId === repo.id}
+                            >
+                              <RefreshCw
+                                className={`w-3 h-3 text-text-muted ${
+                                  syncingRepoId === repo.id ? 'animate-spin' : ''
+                                }`}
+                              />
+                            </button>
+                          </button>
+
+                          {/* PRs List */}
+                          {expandedRepos.has(repo.id) && selectedRepo?.id === repo.id && (
+                            <div className="ml-3 space-y-1 border-l-2 border-border pl-2">
+                              {repoPRs.length > 0 ? (
+                                repoPRs.map((pr) => (
+                                  <button
+                                    key={pr.id}
+                                    onClick={() => handlePRClick(pr, repo, account)}
+                                    className={`w-full flex items-center gap-2 px-2 py-1 rounded transition-all ${
+                                      selectedPR?.id === pr.id
+                                        ? 'bg-primary/10 border border-primary/20'
+                                        : 'hover:bg-surface border border-transparent'
+                                    }`}
+                                  >
+                                    <GitPullRequest className="w-3 h-3 text-text-muted" />
+                                    <div className="flex-1 text-left min-w-0">
+                                      <p className="text-xs font-medium text-text truncate">
+                                        #{pr.pr_number} {pr.title}
+                                      </p>
+                                      <p className="text-xs text-text-muted truncate">
+                                        {pr.head_ref} → {pr.base_ref}
+                                      </p>
+                                    </div>
+                                    {pr.state === 'open' && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    )}
+                                  </button>
+                                ))
+                              ) : (
+                                <p className="text-xs text-text-muted px-2 py-1">No open PRs</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
-            ) : githubConnected ? (
-              <div className="px-3 py-4 text-center text-text-muted text-sm">
-                No repos imported yet. Click + to import.
-              </div>
-            ) : null}
+            ))}
           </div>
         )}
       </div>
 
       {/* User Section */}
-      <div className="p-4 border-t border-border">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-9 h-9 rounded-full gradient-primary flex items-center justify-center text-white font-semibold text-sm">
+      <div className="p-4 border-t border-border space-y-2">
+        <button
+          onClick={() => (window.location.href = '/profile')}
+          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-surface transition-colors"
+        >
+          <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-white font-semibold text-sm">
             {getUserInitials()}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 text-left min-w-0">
             <p className="text-sm font-medium text-white truncate">
-              {user?.full_name || user?.name || user?.email?.split('@')[0] || 'User'}
+              {user?.full_name || user?.email?.split('@')[0] || 'User'}
             </p>
-            <p className="text-xs text-text-muted truncate">
-              {user?.email || 'No email'}
-            </p>
+            <p className="text-xs text-text-muted truncate">{user?.email || ''}</p>
           </div>
-        </div>
-        <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-text-muted" onClick={logout}>
+          <Settings className="w-4 h-4 text-text-muted" />
+        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-text-muted"
+          onClick={logout}
+        >
           <LogOut className="w-4 h-4" />
           Sign Out
         </Button>
       </div>
+
+      {/* Import Modal */}
+      <GitHubImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
     </div>
   );
 }

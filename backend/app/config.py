@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from functools import lru_cache
 from typing import Optional, List
 
@@ -30,7 +31,10 @@ class Settings(BaseSettings):
     AUTO_MERGE_REQUIRE_REVIEWS: int = 1
     PROTECTED_BRANCHES: List[str] = ["main", "master", "develop"]
     
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+        description="Allowed CORS origins"
+    )
 
     class Config:
         env_file = ".env"
