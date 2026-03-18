@@ -137,7 +137,7 @@ export default function Login() {
 
             <Button variant="secondary" className="w-full" disabled>
               <Github className="mr-2 h-5 w-5" />
-              Sign in with GitHub
+              Sign in with GitHubs
             </Button>
           </CardContent>
         </Card>
