@@ -740,7 +740,62 @@ async def get_repo_prs(
     return [GitHubPRDetail.from_orm(pr) for pr in prs]
 
 
-@router.get("/prs/{pr_id}/status")
+@router.get("/prs/{pr_id}/files")
+async def get_pr_files(
+    pr_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Fetch changed files and diff for a PR from GitHub"""
+    pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
+        GitHubPR.id == pr_id,
+        GitHubAccount.user_id == current_user.id
+    ).first()
+
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+
+    if not pr.repo.github_account.is_token_valid:
+        raise HTTPException(status_code=401, detail="GitHub token expired")
+
+    try:
+        import httpx
+        token = pr.repo.github_account.access_token
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        # Get list of changed files with patch
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(
+                f"https://api.github.com/repos/{pr.repo.repo_full_name}/pulls/{pr.pr_number}/files",
+                headers=headers,
+                params={"per_page": 100},
+            )
+        resp.raise_for_status()
+        files = resp.json()
+
+        return {
+            "pr_number": pr.pr_number,
+            "repo": pr.repo.repo_full_name,
+            "files": [
+                {
+                    "filename": f["filename"],
+                    "status": f["status"],          # added/modified/removed/renamed
+                    "additions": f.get("additions", 0),
+                    "deletions": f.get("deletions", 0),
+                    "changes": f.get("changes", 0),
+                    "patch": f.get("patch", ""),    # unified diff for this file
+                    "previous_filename": f.get("previous_filename"),
+                }
+                for f in files
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch PR files: {str(e)}")
+
+
+
 async def check_pr_status(
     pr_id: int,
     db: Session = Depends(get_db),
@@ -844,7 +899,11 @@ async def approve_pr(
         )
         return {"message": "PR approved on GitHub", "success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to approve PR: {str(e)}")
+        err_msg = str(e)
+        # Return 422 for known GitHub business-logic rejections (not server errors)
+        if "cannot approve" in err_msg.lower() or "own pull request" in err_msg.lower():
+            raise HTTPException(status_code=422, detail=err_msg)
+        raise HTTPException(status_code=500, detail=f"Failed to approve PR: {err_msg}")
 
 
 @router.post("/prs/{pr_id}/merge", response_model=MessageResponse)

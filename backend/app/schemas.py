@@ -208,25 +208,24 @@ class ReviewUpdate(BaseModel):
 
 class ReviewResponse(BaseModel):
     id: int
-    pr_url: str
+    pr_url: Optional[str] = None
     pr_number: Optional[int] = None
     repo_full_name: Optional[str] = None
     branch_name: Optional[str] = None
     target_branch: Optional[str] = None
     pr_title: Optional[str] = None
-    original_code: str
+    original_code: Optional[str] = None
     reviewed_code: Optional[str] = None
     ai_feedback: Optional[Dict[str, Any]] = None
     user_comments: List[Any] = []
-    safety_score: int
-    status: str
+    safety_score: int = 0
+    status: str = "pending"
     github_action_taken: Optional[str] = None
-    # FK references — needed by frontend to know which account/repo/pr this review belongs to
     github_account_id: Optional[int] = None
     imported_repo_id: Optional[int] = None
     pr_id: Optional[int] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

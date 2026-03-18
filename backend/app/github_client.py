@@ -150,6 +150,18 @@ class GitHubClient:
                 headers=self.headers,
                 json=body
             )
+            if response.status_code == 422:
+                data = response.json()
+                msg = data.get("message", "")
+                errors = data.get("errors", [])
+                error_msgs = [e.get("message", "") for e in errors if isinstance(e, dict)]
+                all_msgs = " ".join([msg] + error_msgs).lower()
+                if "can not approve" in all_msgs or "own pull request" in all_msgs or "author" in all_msgs:
+                    raise Exception(
+                        "You cannot approve your own pull request. "
+                        "Approval must come from a different GitHub account."
+                    )
+                raise Exception(f"GitHub rejected the approval: {msg} {' '.join(error_msgs)}".strip())
             response.raise_for_status()
             return response.json()
 
