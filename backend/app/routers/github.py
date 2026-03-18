@@ -178,6 +178,7 @@ async def reconnect_account(
 
 
 
+@router.get("/accounts/{account_id}/available-repos", response_model=List[GitHubRepoListItem])
 async def get_available_repos_for_account(
     account_id: int,
     db: Session = Depends(get_db),
@@ -415,13 +416,26 @@ async def sync_repo(
             detail=f"GitHub token for @{repo.github_account.github_username} has expired. Please reconnect."
         )
 
-    # Run in thread pool — sync_repo_prs uses asyncio.run() internally
+    # Run in thread pool — sync_repo_prs is fully synchronous
     await asyncio.to_thread(sync_repo_prs, repo_id, repo.github_account.access_token)
-    return {"message": "Repo synced successfully", "success": True}
+
+    # Check how many PRs we now have
+    db.expire_all()
+    pr_count = db.query(GitHubPR).filter(
+        GitHubPR.repo_id == repo_id,
+        GitHubPR.is_active == True
+    ).count()
+
+    return {"message": f"Synced successfully — {pr_count} open PR(s)", "success": True}
 
 
 def sync_repo_prs(repo_id: int, access_token: str):
-    """Background task: sync open PRs for a repo, mark closed PRs inactive"""
+    """
+    Sync open PRs for a repo from GitHub.
+    Fully synchronous — safe to call from asyncio.to_thread() or background tasks.
+    Uses httpx sync client directly, no asyncio.run() inside.
+    """
+    import httpx
     from app.database import SessionLocal
 
     db = SessionLocal()
@@ -430,11 +444,33 @@ def sync_repo_prs(repo_id: int, access_token: str):
         if not repo:
             return
 
-        client = get_github_client(access_token)
+        headers = {
+            "Authorization": f"token {access_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
 
-        # Fetch open PRs from GitHub
-        open_prs = asyncio.run(client.get_pull_requests(repo.repo_full_name, state="open"))
+        # Fetch open PRs from GitHub using sync httpx
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(
+                f"https://api.github.com/repos/{repo.repo_full_name}/pulls",
+                headers=headers,
+                params={"state": "open", "per_page": 100},
+            )
+
+        if resp.status_code == 401:
+            # Token expired — mark it invalid
+            account = repo.github_account
+            if account:
+                account.is_token_valid = False
+                db.commit()
+            print(f"[sync] Token expired for repo {repo.repo_full_name}")
+            return
+
+        resp.raise_for_status()
+        open_prs = resp.json()
         open_pr_numbers = {pr["number"] for pr in open_prs}
+
+        print(f"[sync] Found {len(open_prs)} open PRs for {repo.repo_full_name}")
 
         for pr_data in open_prs:
             existing = db.query(GitHubPR).filter(
@@ -452,7 +488,7 @@ def sync_repo_prs(repo_id: int, access_token: str):
                 existing.is_active = True
                 existing.last_synced_at = datetime.utcnow()
             else:
-                pr = GitHubPR(
+                new_pr = GitHubPR(
                     repo_id=repo_id,
                     pr_number=pr_data["number"],
                     pr_id=pr_data["id"],
@@ -462,7 +498,7 @@ def sync_repo_prs(repo_id: int, access_token: str):
                     head_ref=pr_data["head"]["ref"],
                     head_sha=pr_data["head"]["sha"],
                     base_ref=pr_data["base"]["ref"],
-                    base_sha=pr_data["base"]["sha"],
+                    base_sha=pr_data.get("base", {}).get("sha"),
                     author_login=pr_data["user"]["login"],
                     author_avatar_url=pr_data["user"].get("avatar_url"),
                     created_at_github=pr_data["created_at"],
@@ -472,38 +508,86 @@ def sync_repo_prs(repo_id: int, access_token: str):
                     deletions=pr_data.get("deletions", 0),
                     is_active=True
                 )
-                db.add(pr)
+                db.add(new_pr)
 
-        # Mark previously open PRs as closed if no longer in open list
-        all_tracked = db.query(GitHubPR).filter(
+        # Mark PRs no longer in the open list as closed
+        tracked_open = db.query(GitHubPR).filter(
             GitHubPR.repo_id == repo_id,
             GitHubPR.state == "open",
             GitHubPR.is_active == True
         ).all()
-        for tracked_pr in all_tracked:
-            if tracked_pr.pr_number not in open_pr_numbers:
-                tracked_pr.state = "closed"
-                tracked_pr.is_active = False
+        for tracked in tracked_open:
+            if tracked.pr_number not in open_pr_numbers:
+                tracked.state = "closed"
+                tracked.is_active = False
 
         repo.is_synced = True
         repo.last_synced_at = datetime.utcnow()
         db.commit()
+        print(f"[sync] Committed PRs for repo {repo_id}")
 
     except Exception as e:
         err_str = str(e)
-        print(f"PR sync error for repo {repo_id}: {err_str}")
-        # Auto-mark token invalid if GitHub rejects it
-        if "401" in err_str or "Bad credentials" in err_str:
-            try:
-                repo = db.query(GitHubRepoImport).filter(GitHubRepoImport.id == repo_id).first()
-                if repo and repo.github_account:
-                    repo.github_account.is_token_valid = False
-                    db.commit()
-            except Exception:
-                pass
+        print(f"[sync] PR sync error for repo {repo_id}: {err_str}")
         db.rollback()
     finally:
         db.close()
+
+
+# ==========================================================
+# DEBUG — remove in production
+# ==========================================================
+
+@router.get("/repos/{repo_id}/debug-sync")
+async def debug_sync(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Debug: fetch PRs live from GitHub and return raw result + what's in DB."""
+    import httpx
+
+    repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
+        GitHubRepoImport.id == repo_id,
+        GitHubAccount.user_id == current_user.id,
+    ).first()
+
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repo not found")
+
+    token = repo.github_account.access_token
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(
+                f"https://api.github.com/repos/{repo.repo_full_name}/pulls",
+                headers=headers,
+                params={"state": "open", "per_page": 100},
+            )
+        github_status = resp.status_code
+        github_prs = resp.json() if resp.status_code == 200 else resp.text
+    except Exception as e:
+        github_status = "error"
+        github_prs = str(e)
+
+    db_prs = db.query(GitHubPR).filter(
+        GitHubPR.repo_id == repo_id
+    ).all()
+
+    return {
+        "repo_id": repo_id,
+        "repo_full_name": repo.repo_full_name,
+        "token_valid": repo.github_account.is_token_valid,
+        "github_api_status": github_status,
+        "github_open_prs_count": len(github_prs) if isinstance(github_prs, list) else "error",
+        "github_pr_numbers": [p["number"] for p in github_prs] if isinstance(github_prs, list) else github_prs,
+        "db_prs_total": len(db_prs),
+        "db_prs": [{"id": p.id, "number": p.pr_number, "title": p.title, "state": p.state, "is_active": p.is_active} for p in db_prs],
+    }
 
 
 # ==========================================================
@@ -517,7 +601,11 @@ async def get_repo_prs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get cached PRs for a repo. With force_sync=true, fetches live from GitHub first."""
+    """
+    Get PRs for a repo.
+    force_sync=true  → fetch live from GitHub and upsert in the SAME db session, then return.
+    force_sync=false → return cached rows only.
+    """
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubRepoImport.id == repo_id,
         GitHubAccount.user_id == current_user.id,
@@ -527,25 +615,128 @@ async def get_repo_prs(
     if not repo:
         raise HTTPException(status_code=404, detail="Repo not found")
 
-    # Check token validity
     if not repo.github_account.is_token_valid:
-        raise HTTPException(
-            status_code=401,
-            detail=f"GitHub token for @{repo.github_account.github_username} has expired. Please reconnect the account."
-        )
+        raise HTTPException(status_code=401,
+            detail=f"GitHub token for @{repo.github_account.github_username} has expired.")
 
     if force_sync:
-        # Run sync in thread pool to avoid blocking the event loop
-        # (sync_repo_prs uses asyncio.run internally so must NOT run in async context directly)
-        await asyncio.to_thread(sync_repo_prs, repo_id, repo.github_account.access_token)
-        # Refresh repo from DB after sync
-        db.refresh(repo)
+        account_id_for_error = repo.github_account_id
+        repo_name_for_log = repo.repo_full_name
+        access_token = repo.github_account.access_token
+
+        try:
+            client = get_github_client(access_token)
+            open_prs_raw = await client.get_pull_requests(repo_name_for_log, state="open")
+            print(f"[pulls] GitHub returned {len(open_prs_raw)} open PR(s) for {repo_name_for_log}")
+
+            open_pr_numbers = {p["number"] for p in open_prs_raw}
+
+            def parse_dt(val):
+                if not val:
+                    return None
+                try:
+                    return datetime.fromisoformat(val.replace("Z", "+00:00")).replace(tzinfo=None)
+                except Exception:
+                    return None
+
+            for pr_data in open_prs_raw:
+                print(f"[pulls] Processing PR #{pr_data['number']}: {pr_data['title']}")
+                try:
+                    existing = db.query(GitHubPR).filter(
+                        GitHubPR.repo_id == repo_id,
+                        GitHubPR.pr_number == pr_data["number"]
+                    ).first()
+
+                    if existing:
+                        existing.title = pr_data["title"]
+                        existing.body = pr_data.get("body")
+                        existing.state = pr_data["state"]
+                        existing.head_ref = pr_data["head"]["ref"]
+                        existing.head_sha = pr_data["head"]["sha"]
+                        existing.base_ref = pr_data["base"]["ref"]
+                        existing.is_active = True
+                        existing.last_synced_at = datetime.utcnow()
+                        existing.updated_at_github = parse_dt(pr_data.get("updated_at"))
+                        print(f"[pulls] Updated PR #{pr_data['number']}")
+                    else:
+                        new_pr = GitHubPR(
+                            repo_id=repo_id,
+                            pr_number=int(pr_data["number"]),
+                            pr_id=int(pr_data["id"]),
+                            title=str(pr_data["title"]),
+                            body=pr_data.get("body"),
+                            state=str(pr_data["state"]),
+                            head_ref=str(pr_data["head"]["ref"]),
+                            head_sha=str(pr_data["head"]["sha"]),
+                            base_ref=str(pr_data["base"]["ref"]),
+                            base_sha=str(pr_data.get("base", {}).get("sha", "")),
+                            author_login=str(pr_data["user"]["login"]),
+                            author_avatar_url=pr_data["user"].get("avatar_url"),
+                            created_at_github=parse_dt(pr_data.get("created_at")),
+                            updated_at_github=parse_dt(pr_data.get("updated_at")),
+                            commits=0,
+                            additions=0,
+                            deletions=0,
+                            is_active=True
+                        )
+                        db.add(new_pr)
+                        db.flush()  # catch constraint errors per-PR, not at commit
+                        print(f"[pulls] Inserted PR #{pr_data['number']}")
+                except Exception as pr_err:
+                    import traceback
+                    print(f"[pulls] ERROR on PR #{pr_data.get('number')}: {traceback.format_exc()}")
+                    db.rollback()
+                    raise
+
+            # Mark PRs no longer open as closed
+            for tracked in db.query(GitHubPR).filter(
+                GitHubPR.repo_id == repo_id,
+                GitHubPR.state == "open",
+                GitHubPR.is_active == True
+            ).all():
+                if tracked.pr_number not in open_pr_numbers:
+                    tracked.state = "closed"
+                    tracked.is_active = False
+                    print(f"[pulls] Closed PR #{tracked.pr_number}")
+
+            repo.is_synced = True
+            repo.last_synced_at = datetime.utcnow()
+            db.commit()
+            print(f"[pulls] Committed. Done.")
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            import traceback
+            full_tb = traceback.format_exc()
+            print(f"[pulls] SYNC FAILED:\n{full_tb}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            # Re-check token validity in a fresh query
+            try:
+                err_str = str(e)
+                if "401" in err_str or "Bad credentials" in err_str:
+                    bad_account = db.query(GitHubAccount).filter(
+                        GitHubAccount.id == account_id_for_error
+                    ).first()
+                    if bad_account:
+                        bad_account.is_token_valid = False
+                        db.commit()
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch PRs: {str(e)}"
+            )
 
     prs = db.query(GitHubPR).filter(
         GitHubPR.repo_id == repo_id,
         GitHubPR.is_active == True
     ).order_by(GitHubPR.created_at_github.desc()).all()
 
+    print(f"[pulls] Returning {len(prs)} PR(s) for repo {repo_id}")
     return [GitHubPRDetail.from_orm(pr) for pr in prs]
 
 

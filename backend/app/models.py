@@ -1,11 +1,12 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, JSON, Float
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Boolean, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
 
+
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
@@ -16,19 +17,18 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships - use back_populates on BOTH sides
+
     github_accounts = relationship("GitHubAccount", back_populates="user", cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
 
+
 class GitHubAccount(Base):
-    """GitHub account connected via PAT (one user can have multiple)"""
     __tablename__ = "github_accounts"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     github_username = Column(String(255), nullable=False)
-    github_user_id = Column(Integer, nullable=True)
+    github_user_id = Column(BigInteger, nullable=True)   # GitHub user IDs can exceed INT
     github_avatar_url = Column(String(500), nullable=True)
     access_token = Column(String(512), nullable=False)
     account_label = Column(String(255), nullable=True)
@@ -37,20 +37,19 @@ class GitHubAccount(Base):
     is_token_valid = Column(Boolean, default=True)
     connected_at = Column(DateTime, default=datetime.utcnow)
     last_synced_at = Column(DateTime, nullable=True)
-    
-    # Relationship - back_populates must match User.github_accounts
+
     user = relationship("User", back_populates="github_accounts")
     imported_repos = relationship("GitHubRepoImport", back_populates="github_account", cascade="all, delete-orphan")
 
+
 class GitHubRepoImport(Base):
-    """Imported repository from a GitHub account"""
     __tablename__ = "github_repo_imports"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     github_account_id = Column(Integer, ForeignKey("github_accounts.id"), nullable=False)
     repo_name = Column(String(255), nullable=False)
     repo_full_name = Column(String(255), nullable=False)
-    github_id = Column(Integer, nullable=True)
+    github_id = Column(BigInteger, nullable=True)        # GitHub repo IDs can exceed INT
     default_branch = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
     is_private = Column(Boolean, default=False)
@@ -58,20 +57,19 @@ class GitHubRepoImport(Base):
     is_synced = Column(Boolean, default=False)
     imported_at = Column(DateTime, default=datetime.utcnow)
     last_synced_at = Column(DateTime, nullable=True)
-    
-    # Relationship - back_populates must match GitHubAccount.imported_repos
+
     github_account = relationship("GitHubAccount", back_populates="imported_repos")
     prs = relationship("GitHubPR", back_populates="repo", cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="imported_repo", cascade="all, delete-orphan")
 
+
 class GitHubPR(Base):
-    """Pull Request from imported repository (cached)"""
     __tablename__ = "github_prs"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     repo_id = Column(Integer, ForeignKey("github_repo_imports.id"), nullable=False)
     pr_number = Column(Integer, nullable=False)
-    pr_id = Column(Integer, nullable=True)
+    pr_id = Column(BigInteger, nullable=True)            # GitHub PR IDs exceed INT (e.g. 3414062119)
     title = Column(String(500), nullable=False)
     body = Column(Text, nullable=True)
     state = Column(String(50), default="open")
@@ -88,20 +86,19 @@ class GitHubPR(Base):
     deletions = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     last_synced_at = Column(DateTime, nullable=True)
-    
-    # Relationship - back_populates must match GitHubRepoImport.prs
+
     repo = relationship("GitHubRepoImport", back_populates="prs")
     reviews = relationship("Review", back_populates="pr", cascade="all, delete-orphan")
 
+
 class Review(Base):
     __tablename__ = "reviews"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     github_account_id = Column(Integer, ForeignKey("github_accounts.id"), nullable=True)
     imported_repo_id = Column(Integer, ForeignKey("github_repo_imports.id"), nullable=True)
     pr_id = Column(Integer, ForeignKey("github_prs.id"), nullable=True)
-    
     pr_url = Column(String(500), index=True)
     pr_number = Column(Integer, nullable=True)
     repo_full_name = Column(String(255), nullable=True)
@@ -119,22 +116,21 @@ class Review(Base):
     github_action_taken = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships - use back_populates (NOT backref)
+
     user = relationship("User", back_populates="reviews")
     github_account = relationship("GitHubAccount", backref="reviews")
     imported_repo = relationship("GitHubRepoImport", back_populates="reviews")
     pr = relationship("GitHubPR", back_populates="reviews")
     messages = relationship("ChatMessage", back_populates="review", cascade="all, delete-orphan")
 
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     review_id = Column(Integer, ForeignKey("reviews.id"), nullable=False)
     role = Column(String(50))
     content = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationship - back_populates must match Review.messages
+
     review = relationship("Review", back_populates="messages")
