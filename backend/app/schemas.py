@@ -1,75 +1,88 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional, List, Dict, Any
+from datetime import datetime
 from enum import Enum
+
 
 # ===========================================
 # ENUMS
 # ===========================================
-
-class ReviewMode(str, Enum):
-    MANUAL = "manual"
-    AUTOMATIC = "automatic"
 
 class ReviewStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
-    APPROVED = "approved"
+    AUTO_MERGED = "auto_merged"
     MERGED = "merged"
-    CHANGES_REQUESTED = "changes_requested"
+    APPROVED = "approved"
+
 
 class MergeMethod(str, Enum):
     MERGE = "merge"
     SQUASH = "squash"
     REBASE = "rebase"
 
+
 # ===========================================
-# USER SCHEMAS
+# AUTH SCHEMAS
 # ===========================================
-
-class UserBase(BaseModel):
-    email: EmailStr
-    full_name: Optional[str] = None
-    avatar_url: Optional[str] = None
-
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, max_length=72)
-
-class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    avatar_url: Optional[str] = None
-
-class UserSettingsUpdate(BaseModel):
-    review_mode: Optional[ReviewMode] = None
-    auto_merge_threshold: Optional[int] = Field(None, ge=0, le=100)
-
-class UserResponse(UserBase):
-    id: int
-    review_mode: str
-    auto_merge_threshold: int
-    is_active: bool
-    created_at: datetime
-    
-    model_config = ConfigDict(from_attributes=True)
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-# ===========================================
-# TOKEN SCHEMAS
-# ===========================================
+
+# Alias used by auth.py — keeps backward compat
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=72)
+    full_name: Optional[str] = None
+
+
+class TokenData(BaseModel):
+    user_id: Optional[int] = None
+    email: Optional[str] = None
+
+
+class UserSignup(BaseModel):
+    email: str
+    password: str
+    full_name: Optional[str] = None
+
 
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-class TokenData(BaseModel):
-    user_id: Optional[int] = None
-    email: Optional[str] = None
+
+# ===========================================
+# USER SCHEMAS
+# ===========================================
+
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    review_mode: str
+    auto_merge_threshold: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+class UserSettingsUpdate(BaseModel):
+    review_mode: Optional[str] = None
+    auto_merge_threshold: Optional[int] = None
+
 
 # ===========================================
 # GITHUB ACCOUNT SCHEMAS
@@ -79,6 +92,7 @@ class GitHubAccountCreate(BaseModel):
     access_token: str
     account_label: Optional[str] = None
 
+
 class GitHubAccountResponse(BaseModel):
     id: int
     github_username: str
@@ -87,8 +101,9 @@ class GitHubAccountResponse(BaseModel):
     is_active: bool
     is_token_valid: bool
     connected_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # ===========================================
 # GITHUB REPO SCHEMAS
@@ -103,12 +118,15 @@ class GitHubRepoListItem(BaseModel):
     default_branch: str
     description: Optional[str] = None
 
+
 class GitHubRepoImportRequest(BaseModel):
     github_account_id: int
     repo_full_names: List[str]
 
+
 class GitHubRepoResponse(BaseModel):
     id: int
+    github_account_id: int          # ← critical for frontend grouping by account
     repo_name: str
     repo_full_name: str
     default_branch: Optional[str] = None
@@ -118,8 +136,9 @@ class GitHubRepoResponse(BaseModel):
     is_synced: bool
     imported_at: datetime
     last_synced_at: Optional[datetime] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # ===========================================
 # GITHUB PR SCHEMAS
@@ -140,8 +159,10 @@ class GitHubPRDetail(BaseModel):
     commits: int
     additions: int
     deletions: int
-    
+    repo_id: Optional[int] = None
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # ===========================================
 # REVIEW SCHEMAS
@@ -153,12 +174,14 @@ class FeedbackItem(BaseModel):
     line_number: Optional[int] = None
     suggestion: Optional[str] = None
 
+
 class AIAnalysis(BaseModel):
     summary: str
     issues: List[FeedbackItem]
     suggestions: List[str] = []
     safety_score: int = 0
     ready_for_merge: bool = False
+
 
 class ReviewCreate(BaseModel):
     pr_url: str
@@ -173,6 +196,7 @@ class ReviewCreate(BaseModel):
     target_branch: Optional[str] = None
     pr_title: Optional[str] = None
 
+
 class ReviewUpdate(BaseModel):
     status: Optional[ReviewStatus] = None
     reviewed_code: Optional[str] = None
@@ -181,32 +205,49 @@ class ReviewUpdate(BaseModel):
     github_action_taken: Optional[str] = None
     user_comments: Optional[List[Any]] = None
 
+
 class ReviewResponse(BaseModel):
     id: int
     pr_url: str
-    pr_number: Optional[int]
-    repo_full_name: Optional[str]
-    branch_name: Optional[str]
-    target_branch: Optional[str]
-    pr_title: Optional[str]
+    pr_number: Optional[int] = None
+    repo_full_name: Optional[str] = None
+    branch_name: Optional[str] = None
+    target_branch: Optional[str] = None
+    pr_title: Optional[str] = None
     original_code: str
-    reviewed_code: Optional[str]
-    ai_feedback: Optional[Dict[str, Any]]
+    reviewed_code: Optional[str] = None
+    ai_feedback: Optional[Dict[str, Any]] = None
     user_comments: List[Any] = []
     safety_score: int
     status: str
     github_action_taken: Optional[str] = None
+    # FK references — needed by frontend to know which account/repo/pr this review belongs to
+    github_account_id: Optional[int] = None
+    imported_repo_id: Optional[int] = None
+    pr_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReviewStatusResponse(BaseModel):
+    id: int
+    status: str
+    safety_score: int
+    reviewed_code: Optional[str] = None
+    ai_feedback: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 class UserCommentCreate(BaseModel):
     content: str
     line_number: Optional[int] = None
 
+
 # ===========================================
-# PR MANAGEMENT SCHEMAS ← ← ← THESE WERE MISSING!
+# PR MANAGEMENT SCHEMAS
 # ===========================================
 
 class PRMergeRequest(BaseModel):
@@ -214,16 +255,20 @@ class PRMergeRequest(BaseModel):
     commit_title: Optional[str] = None
     commit_message: Optional[str] = None
 
+
 class PRApproveRequest(BaseModel):
     comment: Optional[str] = ""
 
+
 class PRChangesRequest(BaseModel):
     comment: str
+
 
 class MergeDecision(BaseModel):
     should_merge: bool
     reason: str
     required_actions: List[str] = []
+
 
 # ===========================================
 # CHAT MESSAGE SCHEMAS
@@ -234,14 +279,16 @@ class ChatMessageCreate(BaseModel):
     content: str
     role: str = "user"
 
+
 class ChatMessageResponse(BaseModel):
     id: int
     review_id: int
     role: str
     content: str
     created_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # ===========================================
 # RESPONSE WRAPPERS
@@ -252,11 +299,13 @@ class MessageResponse(BaseModel):
     success: bool = True
     data: Optional[Dict[str, Any]] = None
 
+
 class RepoImportResponse(BaseModel):
     message: str
     success: bool
     imported_count: int
     repos: List[GitHubRepoResponse]
+
 
 class PaginatedResponse(BaseModel):
     items: List[Any]

@@ -1,15 +1,17 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
-import { 
-  Folder, ChevronRight, ChevronDown, GitPullRequest, 
+import {
+  Folder, ChevronRight, ChevronDown, GitPullRequest,
   Github, RefreshCw, Plus, LogOut, Settings, User,
-  AlertCircle, CheckCircle, X
+  AlertCircle, Lock, Unlock, GitMerge, Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { GitHubImportModal } from './GitHubModal';
 import { GitHubAccount, GitHubRepo, GitHubPR } from '@/types';
 
 export default function Sidebar() {
+  const navigate = useNavigate();
   const {
     user,
     githubAccounts,
@@ -20,16 +22,16 @@ export default function Sidebar() {
     expandedAccounts,
     expandedRepos,
     repoPRs,
-    isLoading,
+    syncingAccountId,
     error,
     logout,
     selectAccount,
     selectRepo,
-    selectPR,
-    loadPRReview,
+    openPRForReview,
     toggleAccount,
     toggleRepo,
     syncRepo,
+    syncAccount,
     disconnectGitHubAccount,
     setError,
   } = useStore();
@@ -42,21 +44,25 @@ export default function Sidebar() {
     selectAccount(account);
   };
 
-  const handleRepoClick = async (repo: GitHubRepo) => {
+  const handleRepoClick = (repo: GitHubRepo) => {
     toggleRepo(repo.id);
     selectRepo(repo);
   };
 
-  const handlePRClick = async (pr: GitHubPR, repo: GitHubRepo, account: GitHubAccount) => {
-    selectPR(pr);
-    await loadPRReview(pr, repo, account);
+  const handlePRClick = (pr: GitHubPR, repo: GitHubRepo, account: GitHubAccount) => {
+    openPRForReview(pr, repo, account);
   };
 
-  const handleSync = async (repoId: number, e: React.MouseEvent) => {
+  const handleSyncRepo = async (repoId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setSyncingRepoId(repoId);
     await syncRepo(repoId);
     setSyncingRepoId(null);
+  };
+
+  const handleSyncAccount = async (accountId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await syncAccount(accountId);
   };
 
   const handleDisconnect = async (accountId: number, e: React.MouseEvent) => {
@@ -66,13 +72,23 @@ export default function Sidebar() {
     }
   };
 
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
   const getUserInitials = () => {
     if (!user) return 'U';
     const name = user.full_name || user.email || 'User';
-    if (name.includes('@')) {
-      return name.split('@')[0].charAt(0).toUpperCase();
-    }
-    return name.charAt(0).toUpperCase();
+    return name.includes('@')
+      ? name.split('@')[0].charAt(0).toUpperCase()
+      : name.charAt(0).toUpperCase();
+  };
+
+  const getPRIcon = (pr: GitHubPR) => {
+    if (pr.state === 'merged') return <GitMerge className="w-3 h-3 text-purple-400" />;
+    if (pr.state === 'closed') return <GitPullRequest className="w-3 h-3 text-red-400" />;
+    return <GitPullRequest className="w-3 h-3 text-emerald-400" />;
   };
 
   return (
@@ -104,12 +120,12 @@ export default function Sidebar() {
       {error && (
         <div className="mx-3 mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
           <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="ml-auto hover:text-white">×</button>
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto hover:text-white leading-none">×</button>
         </div>
       )}
 
-      {/* Content */}
+      {/* Accounts + Repos Tree */}
       <div className="flex-1 overflow-y-auto p-3">
         {githubAccounts.length === 0 ? (
           <div className="text-center py-8">
@@ -122,163 +138,212 @@ export default function Sidebar() {
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
-            {githubAccounts.map((account) => (
-              <div key={account.id} className="space-y-1">
-                {/* Account Header */}
-                <button
-                  onClick={() => handleAccountClick(account)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
-                    selectedAccount?.id === account.id
-                      ? 'bg-primary/10 border border-primary/20'
-                      : 'hover:bg-surface border border-transparent'
-                  }`}
-                >
-                  {expandedAccounts.has(account.id) ? (
-                    <ChevronDown className="w-4 h-4 text-text-muted" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-text-muted" />
-                  )}
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-600 to-gray-800 flex items-center justify-center">
-                    <span className="text-xs text-white font-semibold">
-                      {account.github_username.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="text-sm font-medium text-text truncate">
-                      @{account.github_username}
-                    </p>
-                    {account.account_label && (
-                      <p className="text-xs text-text-muted truncate">{account.account_label}</p>
-                    )}
-                  </div>
-                  {!account.is_token_valid && (
-                    <AlertCircle className="w-4 h-4 text-yellow-500" title="Token expired" />
-                  )}
-                  <button
-                    onClick={(e) => handleDisconnect(account.id, e)}
-                    className="p-1 hover:bg-red-500/20 rounded"
-                    title="Disconnect"
+          <div className="space-y-2">
+            {githubAccounts.map((account) => {
+              const accountRepos = importedRepos.filter(
+                (r) => r.github_account_id === account.id && r.is_active
+              );
+              const isSyncingThis = syncingAccountId === account.id;
+
+              return (
+                <div key={account.id} className="space-y-1">
+                  {/* ── Account Row ── */}
+                  <div
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                      selectedAccount?.id === account.id
+                        ? 'bg-primary/10 border border-primary/20'
+                        : 'hover:bg-surface border border-transparent'
+                    }`}
+                    onClick={() => handleAccountClick(account)}
                   >
-                    <X className="w-3 h-3 text-text-muted hover:text-red-400" />
-                  </button>
-                </button>
+                    {expandedAccounts.has(account.id) ? (
+                      <ChevronDown className="w-4 h-4 text-text-muted flex-shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-text-muted flex-shrink-0" />
+                    )}
 
-                {/* Repos List */}
-                {expandedAccounts.has(account.id) && (
-                  <div className="ml-4 space-y-1 border-l-2 border-border pl-3">
-                    {importedRepos
-                      .filter((repo) => repo.github_account_id === account.id && repo.is_active)
-                      .map((repo) => (
-                        <div key={repo.id} className="space-y-1">
-                          {/* Repo Header */}
+                    {/* Avatar */}
+                    {account.github_avatar_url ? (
+                      <img
+                        src={account.github_avatar_url}
+                        alt={account.github_username}
+                        className="w-6 h-6 rounded-full flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-600 to-gray-800 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs text-white font-semibold">
+                          {account.github_username.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="text-sm font-medium text-text truncate">
+                        @{account.github_username}
+                      </p>
+                      {account.account_label && (
+                        <p className="text-xs text-text-muted truncate">{account.account_label}</p>
+                      )}
+                    </div>
+
+                    {/* Token status */}
+                    {!account.is_token_valid && (
+                      <AlertCircle className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" title="Token expired" />
+                    )}
+
+                    {/* Sync all repos in this account */}
+                    <button
+                      onClick={(e) => handleSyncAccount(account.id, e)}
+                      className="p-1 hover:bg-surface rounded flex-shrink-0"
+                      title="Sync all repos"
+                      disabled={isSyncingThis}
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 text-text-muted hover:text-text ${
+                          isSyncingThis ? 'animate-spin text-primary' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {/* Disconnect */}
+                    <button
+                      onClick={(e) => handleDisconnect(account.id, e)}
+                      className="p-1 hover:bg-red-500/20 rounded flex-shrink-0"
+                      title="Disconnect account"
+                    >
+                      <span className="text-text-muted hover:text-red-400 text-xs leading-none">✕</span>
+                    </button>
+                  </div>
+
+                  {/* ── Repos List (expanded) ── */}
+                  {expandedAccounts.has(account.id) && (
+                    <div className="ml-4 space-y-1 border-l-2 border-border/60 pl-3">
+                      {accountRepos.length === 0 ? (
+                        <p className="text-xs text-text-muted py-2 px-2">
+                          No repos imported.{' '}
                           <button
-                            onClick={() => handleRepoClick(repo)}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all ${
-                              selectedRepo?.id === repo.id
-                                ? 'bg-primary/10 border border-primary/20'
-                                : 'hover:bg-surface border border-transparent'
-                            }`}
+                            className="text-primary underline"
+                            onClick={() => setIsImportModalOpen(true)}
                           >
-                            {expandedRepos.has(repo.id) ? (
-                              <ChevronDown className="w-3 h-3 text-text-muted" />
-                            ) : (
-                              <ChevronRight className="w-3 h-3 text-text-muted" />
-                            )}
-                            <Folder className="w-3 h-3 text-primary" />
-                            <span className="text-xs font-medium text-text flex-1 text-left truncate">
-                              {repo.repo_name}
-                            </span>
-                            <button
-                              onClick={(e) => handleSync(repo.id, e)}
-                              className="p-0.5 hover:bg-surface rounded"
-                              title="Sync PRs"
-                              disabled={syncingRepoId === repo.id}
-                            >
-                              <RefreshCw
-                                className={`w-3 h-3 text-text-muted ${
-                                  syncingRepoId === repo.id ? 'animate-spin' : ''
-                                }`}
-                              />
-                            </button>
+                            Import one
                           </button>
+                        </p>
+                      ) : (
+                        accountRepos.map((repo) => {
+                          const prsForRepo = selectedRepo?.id === repo.id ? repoPRs : [];
 
-                          {/* PRs List */}
-                          {expandedRepos.has(repo.id) && selectedRepo?.id === repo.id && (
-                            <div className="ml-3 space-y-1 border-l-2 border-border pl-2">
-                              {repoPRs.length > 0 ? (
-                                repoPRs.map((pr) => (
-                                  <button
-                                    key={pr.id}
-                                    onClick={() => handlePRClick(pr, repo, account)}
-                                    className={`w-full flex items-center gap-2 px-2 py-1 rounded transition-all ${
-                                      selectedPR?.id === pr.id
-                                        ? 'bg-primary/10 border border-primary/20'
-                                        : 'hover:bg-surface border border-transparent'
+                          return (
+                            <div key={repo.id} className="space-y-0.5">
+                              {/* Repo Row */}
+                              <button
+                                onClick={() => handleRepoClick(repo)}
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all ${
+                                  selectedRepo?.id === repo.id
+                                    ? 'bg-primary/10 border border-primary/20'
+                                    : 'hover:bg-surface border border-transparent'
+                                }`}
+                              >
+                                {expandedRepos.has(repo.id) ? (
+                                  <ChevronDown className="w-3 h-3 text-text-muted flex-shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-3 h-3 text-text-muted flex-shrink-0" />
+                                )}
+                                <Folder className="w-3 h-3 text-primary flex-shrink-0" />
+                                <span className="text-xs font-medium text-text flex-1 text-left truncate">
+                                  {repo.repo_name}
+                                </span>
+                                {repo.is_private ? (
+                                  <Lock className="w-3 h-3 text-text-muted flex-shrink-0" title="Private" />
+                                ) : (
+                                  <Unlock className="w-3 h-3 text-text-muted/40 flex-shrink-0" title="Public" />
+                                )}
+                                {/* Per-repo sync */}
+                                <button
+                                  onClick={(e) => handleSyncRepo(repo.id, e)}
+                                  className="p-0.5 hover:bg-surface rounded flex-shrink-0"
+                                  title="Sync PRs"
+                                  disabled={syncingRepoId === repo.id}
+                                >
+                                  <RefreshCw
+                                    className={`w-3 h-3 text-text-muted ${
+                                      syncingRepoId === repo.id ? 'animate-spin' : ''
                                     }`}
-                                  >
-                                    <GitPullRequest className="w-3 h-3 text-text-muted" />
-                                    <div className="flex-1 text-left min-w-0">
-                                      <p className="text-xs font-medium text-text truncate">
-                                        #{pr.pr_number} {pr.title}
-                                      </p>
-                                      <p className="text-xs text-text-muted truncate">
-                                        {pr.head_ref} → {pr.base_ref}
-                                      </p>
+                                  />
+                                </button>
+                              </button>
+
+                              {/* PRs List */}
+                              {expandedRepos.has(repo.id) && selectedRepo?.id === repo.id && (
+                                <div className="ml-3 space-y-0.5 border-l border-border/40 pl-2">
+                                  {prsForRepo.length === 0 ? (
+                                    <div className="flex items-center gap-1.5 px-2 py-1.5">
+                                      <Clock className="w-3 h-3 text-text-muted" />
+                                      <p className="text-xs text-text-muted">No open PRs</p>
                                     </div>
-                                    {pr.state === 'open' && (
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    )}
-                                  </button>
-                                ))
-                              ) : (
-                                <p className="text-xs text-text-muted px-2 py-1">No open PRs</p>
+                                  ) : (
+                                    prsForRepo.map((pr) => (
+                                      <button
+                                        key={pr.id}
+                                        onClick={() => handlePRClick(pr, repo, account)}
+                                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded transition-all text-left ${
+                                          selectedPR?.id === pr.id
+                                            ? 'bg-primary/10 border border-primary/20'
+                                            : 'hover:bg-surface border border-transparent'
+                                        }`}
+                                      >
+                                        {getPRIcon(pr)}
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs text-text truncate">{pr.title}</p>
+                                          <p className="text-xs text-text-muted">
+                                            #{pr.pr_number} · {pr.head_ref} → {pr.base_ref}
+                                          </p>
+                                        </div>
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
                               )}
                             </div>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            ))}
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* User Section */}
-      <div className="p-4 border-t border-border space-y-2">
+      {/* Footer — User + Settings + Logout */}
+      <div className="border-t border-border p-3 space-y-1">
         <button
-          onClick={() => (window.location.href = '/profile')}
-          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-surface transition-colors"
+          onClick={() => navigate('/settings')}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface transition-all"
         >
-          <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-white font-semibold text-sm">
-            {getUserInitials()}
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <p className="text-sm font-medium text-white truncate">
-              {user?.full_name || user?.email?.split('@')[0] || 'User'}
-            </p>
-            <p className="text-xs text-text-muted truncate">{user?.email || ''}</p>
-          </div>
           <Settings className="w-4 h-4 text-text-muted" />
+          <span className="text-sm text-text-muted">Settings</span>
         </button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start gap-2 text-text-muted"
-          onClick={logout}
+        <button
+          onClick={() => navigate('/profile')}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface transition-all"
         >
-          <LogOut className="w-4 h-4" />
-          Sign Out
-        </Button>
+          <User className="w-4 h-4 text-text-muted" />
+          <span className="text-sm text-text-muted truncate">
+            {user?.full_name || user?.email || 'Profile'}
+          </span>
+        </button>
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 transition-all"
+        >
+          <LogOut className="w-4 h-4 text-text-muted" />
+          <span className="text-sm text-text-muted">Sign out</span>
+        </button>
       </div>
 
-      {/* Import Modal */}
-      <GitHubImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-      />
+      <GitHubImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} />
     </div>
   );
 }
