@@ -53,8 +53,9 @@ interface AppState {
 
   // Actions - GitHub
   loadGitHubAccounts: () => Promise<void>;
-  connectGitHubAccount: (token: string, label?: string) => Promise<void>;
+  connectGitHubAccount: (token: string, label?: string) => Promise<any>;
   disconnectGitHubAccount: (accountId: number) => Promise<void>;
+  reconnectAccount: (accountId: number, token: string) => Promise<void>;
   loadAccountRepos: (accountId: number) => Promise<any[]>;
   importRepos: (accountId: number, repoFullNames: string[]) => Promise<void>;
   loadImportedRepos: () => Promise<void>;
@@ -206,9 +207,10 @@ export const useStore = create<AppState>((set, get) => ({
   connectGitHubAccount: async (token: string, label?: string) => {
     set({ isLoading: true, error: null });
     try {
-      await githubAPI.connectAccount(token, label);
+      const newAccount = await githubAPI.connectAccount(token, label);
       await get().loadGitHubAccounts();
       set({ isLoading: false });
+      return newAccount; // Return so modal can immediately go to repos step
     } catch (error: any) {
       set({ error: extractError(error, 'Failed to connect GitHub account'), isLoading: false });
       throw error;
@@ -218,8 +220,7 @@ export const useStore = create<AppState>((set, get) => ({
   disconnectGitHubAccount: async (accountId: number) => {
     try {
       await githubAPI.disconnectAccount(accountId);
-      // Clear selection if disconnected account was selected
-      const { selectedAccount, selectedRepo, selectedPR } = get();
+      const { selectedAccount } = get();
       if (selectedAccount?.id === accountId) {
         set({ selectedAccount: null, selectedRepo: null, selectedPR: null, currentReview: null, repoPRs: [] });
       }
@@ -227,6 +228,18 @@ export const useStore = create<AppState>((set, get) => ({
       await get().loadImportedRepos();
     } catch (error: any) {
       set({ error: extractError(error, 'Failed to disconnect account') });
+    }
+  },
+
+  reconnectAccount: async (accountId: number, token: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      await githubAPI.reconnectAccount(accountId, token);
+      await get().loadGitHubAccounts();
+      set({ isLoading: false });
+    } catch (error: any) {
+      set({ error: extractError(error, 'Failed to reconnect account'), isLoading: false });
+      throw error;
     }
   },
 

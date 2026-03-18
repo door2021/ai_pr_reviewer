@@ -107,7 +107,77 @@ async def disconnect_github_account(
     return {"message": "GitHub account disconnected", "success": True}
 
 
-@router.get("/accounts/{account_id}/available-repos", response_model=List[GitHubRepoListItem])
+@router.post("/accounts/{account_id}/validate-token", response_model=MessageResponse)
+async def validate_account_token(
+    account_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Check if the stored token for an account is still valid by calling GitHub API"""
+    account = db.query(GitHubAccount).filter(
+        GitHubAccount.id == account_id,
+        GitHubAccount.user_id == current_user.id,
+        GitHubAccount.is_active == True
+    ).first()
+
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    try:
+        client = get_github_client(account.access_token)
+        await client.get_user()  # Will 401 if token expired
+        account.is_token_valid = True
+        db.commit()
+        return {"message": "Token is valid", "success": True}
+    except Exception:
+        account.is_token_valid = False
+        db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail=f"Token for @{account.github_username} has expired. Please reconnect with a new token."
+        )
+
+
+@router.post("/accounts/{account_id}/reconnect", response_model=MessageResponse)
+async def reconnect_account(
+    account_id: int,
+    request: GitHubAccountCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update the access token for an existing account (re-auth after expiry)"""
+    account = db.query(GitHubAccount).filter(
+        GitHubAccount.id == account_id,
+        GitHubAccount.user_id == current_user.id,
+        GitHubAccount.is_active == True
+    ).first()
+
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    try:
+        client = get_github_client(request.access_token)
+        user_info = await client.get_user()
+
+        # Ensure the token belongs to the same GitHub user
+        if user_info["login"] != account.github_username:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Token belongs to @{user_info['login']} but account is @{account.github_username}"
+            )
+
+        account.access_token = request.access_token
+        account.is_token_valid = True
+        account.last_synced_at = datetime.utcnow()
+        db.commit()
+        return {"message": f"Account @{account.github_username} reconnected successfully", "success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to reconnect: {str(e)}")
+
+
+
 async def get_available_repos_for_account(
     account_id: int,
     db: Session = Depends(get_db),
@@ -142,12 +212,16 @@ async def get_available_repos_for_account(
             for r in repos
         ]
     except Exception as e:
-        # Mark token as invalid if GitHub returns 401
-        if "401" in str(e):
+        err_str = str(e)
+        # Auto-mark token invalid on any 401 from GitHub
+        if "401" in err_str or "Bad credentials" in err_str:
             account.is_token_valid = False
             db.commit()
-            raise HTTPException(status_code=401, detail="GitHub token expired — please reconnect")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch repos: {str(e)}")
+            raise HTTPException(
+                status_code=401,
+                detail=f"GitHub token for @{account.github_username} has expired. Please reconnect."
+            )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch repos: {err_str}")
 
 
 @router.post("/accounts/{account_id}/sync", response_model=MessageResponse)
@@ -175,7 +249,7 @@ async def sync_account_repos(
     ).all()
 
     for repo in repos:
-        sync_repo_prs(repo.id, account.access_token)
+        await asyncio.to_thread(sync_repo_prs, repo.id, account.access_token)
 
     account.last_synced_at = datetime.utcnow()
     db.commit()
@@ -223,7 +297,16 @@ async def import_repos(
                 imported_repos.append(existing)
                 continue
 
-            repo_data = await client.get_repo_details(repo_full_name)
+            # Fetch repo details directly by name — no need to list all repos
+            try:
+                repo_data = await client.get_repo_details(repo_full_name)
+            except Exception as e:
+                if "401" in str(e) or "404" in str(e):
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Repo '{repo_full_name}' not found or not accessible with this token."
+                    )
+                raise
 
             imported_repo = GitHubRepoImport(
                 github_account_id=account.id,
@@ -316,7 +399,7 @@ async def sync_repo(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Force sync PRs for a repo"""
+    """Force sync PRs for a repo from GitHub"""
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubRepoImport.id == repo_id,
         GitHubAccount.user_id == current_user.id,
@@ -327,10 +410,14 @@ async def sync_repo(
         raise HTTPException(status_code=404, detail="Repo not found")
 
     if not repo.github_account.is_token_valid:
-        raise HTTPException(status_code=401, detail="GitHub token expired")
+        raise HTTPException(
+            status_code=401,
+            detail=f"GitHub token for @{repo.github_account.github_username} has expired. Please reconnect."
+        )
 
-    sync_repo_prs(repo_id, repo.github_account.access_token)
-    return {"message": "Repo sync started", "success": True}
+    # Run in thread pool — sync_repo_prs uses asyncio.run() internally
+    await asyncio.to_thread(sync_repo_prs, repo_id, repo.github_account.access_token)
+    return {"message": "Repo synced successfully", "success": True}
 
 
 def sync_repo_prs(repo_id: int, access_token: str):
@@ -403,7 +490,17 @@ def sync_repo_prs(repo_id: int, access_token: str):
         db.commit()
 
     except Exception as e:
-        print(f"PR sync error for repo {repo_id}: {e}")
+        err_str = str(e)
+        print(f"PR sync error for repo {repo_id}: {err_str}")
+        # Auto-mark token invalid if GitHub rejects it
+        if "401" in err_str or "Bad credentials" in err_str:
+            try:
+                repo = db.query(GitHubRepoImport).filter(GitHubRepoImport.id == repo_id).first()
+                if repo and repo.github_account:
+                    repo.github_account.is_token_valid = False
+                    db.commit()
+            except Exception:
+                pass
         db.rollback()
     finally:
         db.close()
@@ -420,7 +517,7 @@ async def get_repo_prs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get cached PRs for a repo"""
+    """Get cached PRs for a repo. With force_sync=true, fetches live from GitHub first."""
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubRepoImport.id == repo_id,
         GitHubAccount.user_id == current_user.id,
@@ -430,8 +527,19 @@ async def get_repo_prs(
     if not repo:
         raise HTTPException(status_code=404, detail="Repo not found")
 
-    if force_sync and repo.github_account.is_token_valid:
-        sync_repo_prs(repo_id, repo.github_account.access_token)
+    # Check token validity
+    if not repo.github_account.is_token_valid:
+        raise HTTPException(
+            status_code=401,
+            detail=f"GitHub token for @{repo.github_account.github_username} has expired. Please reconnect the account."
+        )
+
+    if force_sync:
+        # Run sync in thread pool to avoid blocking the event loop
+        # (sync_repo_prs uses asyncio.run internally so must NOT run in async context directly)
+        await asyncio.to_thread(sync_repo_prs, repo_id, repo.github_account.access_token)
+        # Refresh repo from DB after sync
+        db.refresh(repo)
 
     prs = db.query(GitHubPR).filter(
         GitHubPR.repo_id == repo_id,
