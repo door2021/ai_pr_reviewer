@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from app.config import settings
 from app.database import Base, engine
-from app.routers import auth, reviews, github, users, pr_management
+from app.routers import auth, reviews, github, users, pr_management, github_app_router
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -31,6 +31,12 @@ app.include_router(reviews.router, prefix=settings.API_V1_PREFIX)
 app.include_router(github.router, prefix=settings.API_V1_PREFIX)
 app.include_router(users.router, prefix=settings.API_V1_PREFIX)
 app.include_router(pr_management.router, prefix=settings.API_V1_PREFIX)
+
+
+app.include_router(
+    github_app_router.router,
+    prefix="/api/v1"
+)
 
 # Serve frontend
 if os.path.exists("../frontend/dist"):

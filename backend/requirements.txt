@@ -25,6 +25,10 @@ openai>=1.0.0
 # Stripe billing
 stripe>=7.0.0
 
+# GitHub App JWT signing
+PyJWT>=2.8.0
+cryptography>=41.0.0
+
 # Validation & Settings
 pydantic
 pydantic-settings

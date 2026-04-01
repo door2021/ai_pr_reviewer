@@ -18,6 +18,12 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Stripe billing
+    stripe_customer_id = Column(String(255), nullable=True, index=True)
+    stripe_subscription_id = Column(String(255), nullable=True)
+    subscription_plan = Column(String(50), default="free")   # free|solo|team|pro
+    subscription_status = Column(String(50), default="active")  # active|past_due|canceled|trialing
+
     github_accounts = relationship("GitHubAccount", back_populates="user", cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
 
@@ -37,6 +43,7 @@ class GitHubAccount(Base):
     is_token_valid = Column(Boolean, default=True)
     connected_at = Column(DateTime, default=datetime.utcnow)
     last_synced_at = Column(DateTime, nullable=True)
+    installation_id = Column(BigInteger, nullable=True, index=True)  # GitHub App install
 
     user = relationship("User", back_populates="github_accounts")
     imported_repos = relationship("GitHubRepoImport", back_populates="github_account", cascade="all, delete-orphan")
