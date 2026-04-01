@@ -18,8 +18,6 @@ from app.dependencies import get_current_user
 from app.ai_engine import ai_engine
 from app.redis_client import redis_client
 from app.github_client import get_github_client
-import json
-import asyncio
 
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
@@ -106,7 +104,7 @@ async def create_review(
     return review
 
 
-def process_ai_review(
+async def process_ai_review(
     review_id: int,
     code_diff: str,
     original_code: str,
@@ -122,11 +120,11 @@ def process_ai_review(
         if not review:
             return
 
-        analysis = asyncio.run(ai_engine.analyze_code(
+        analysis = await ai_engine.analyze_code(
             code_diff, original_code, repo_name, branch_name
-        ))
+        )
 
-        reviewed_code = asyncio.run(ai_engine.generate_reviewed_code(original_code, analysis))
+        reviewed_code = await ai_engine.generate_reviewed_code(original_code, analysis)
 
         review.ai_feedback = analysis.dict()
         review.reviewed_code = reviewed_code
@@ -301,3 +299,24 @@ async def get_chat_messages(
         ChatMessage.review_id == review_id
     ).order_by(ChatMessage.created_at.asc()).all()
     return messages
+
+
+@router.post("/generate-description")
+async def generate_pr_description(
+    request: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate an AI PR title + description from a code diff.
+    Request body: { "code_diff": "..." }
+    Returns: { "title": "...", "summary": "...", "changes": [...], "testing": "...", "notes": "..." }
+    """
+    code_diff = request.get("code_diff", "")
+    if not code_diff:
+        raise HTTPException(status_code=400, detail="code_diff is required")
+
+    try:
+        result = await ai_engine.generate_pr_description(code_diff)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate description: {str(e)}")

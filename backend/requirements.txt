@@ -11,22 +11,16 @@ alembic
 # Redis
 redis
 
-# Authentication
+# Auth
 python-jose[cryptography]
 passlib[bcrypt]
 bcrypt
 
-# HTTP Client
+# HTTP Client (for GitHub API calls)
 httpx
 
-# AI & ML
-langchain
-langchain-community
-langchain-huggingface
-langgraph
-huggingface_hub
-transformers
-torch
+# AI — one package covers OpenRouter + Groq (both OpenAI-compatible)
+openai>=1.0.0
 
 # Validation & Settings
 pydantic

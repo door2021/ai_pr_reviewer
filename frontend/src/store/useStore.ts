@@ -44,6 +44,10 @@ interface AppState {
   expandedAccounts: Set<number>;
   expandedRepos: Set<number>;
 
+  // PR action state — persists across renders, resets on PR change
+  prApproved: boolean;
+  prMerged: boolean;
+
   // Actions - Auth
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
@@ -98,6 +102,8 @@ export const useStore = create<AppState>((set, get) => ({
   selectedPR: null,
   repoPRs: [],
   syncingAccountId: null,
+  prApproved: false,
+  prMerged: false,
   currentReview: null,
   originalCode: '',
   reviewedCode: '',
@@ -334,20 +340,47 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   selectPR: (pr: GitHubPR | null) => {
-    set({ selectedPR: pr });
+    set({ selectedPR: pr, prApproved: false, prMerged: false });
   },
 
-  // Just sets the selected PR/repo/account without creating a review
-  // Used when user clicks a PR in sidebar — review is only created when they click "Review" button
+  // Used when user clicks a PR in the sidebar
   openPRForReview: (pr: GitHubPR, repo: GitHubRepo, account: GitHubAccount) => {
+    const { selectedPR, prApproved, currentReview, originalCode, reviewedCode } = get();
+    const samePR = selectedPR?.id === pr.id;
+
+    // Try restore persisted review from localStorage (survives logout/refresh)
+    let restoredReview = samePR ? currentReview : null;
+    let restoredOriginal = samePR ? originalCode : '';
+    let restoredReviewed = samePR ? reviewedCode : '';
+    let restoredApproved = samePR ? prApproved : false;
+
+    if (!samePR) {
+      try {
+        const stored = localStorage.getItem(`review_pr_${pr.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          // Only restore if less than 24 hours old
+          if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+            restoredReview = parsed.review;
+            restoredOriginal = parsed.review.original_code || '';
+            restoredReviewed = parsed.review.reviewed_code || '';
+          }
+        }
+        const approvedKey = `approved_pr_${pr.id}`;
+        restoredApproved = localStorage.getItem(approvedKey) === 'true';
+      } catch {}
+    }
+
     set({
       selectedPR: pr,
       selectedRepo: repo,
       selectedAccount: account,
-      currentReview: null,
-      originalCode: '',
-      reviewedCode: '',
       error: null,
+      prMerged: false,
+      prApproved: restoredApproved,
+      currentReview: restoredReview,
+      originalCode: restoredOriginal,
+      reviewedCode: restoredReviewed,
     });
   },
 
@@ -386,6 +419,45 @@ export const useStore = create<AppState>((set, get) => ({
         reviewedCode: review.reviewed_code || '',
         isReviewing: false,
       });
+
+      // Poll until the background AI task completes
+      // The review starts as 'processing' — we poll /reviews/{id}/status every 2s
+      if (review.status === 'processing') {
+        const prId = selectedPR.id;
+        const maxAttempts = 30; // 60 seconds max
+        let attempts = 0;
+
+        const poll = async () => {
+          try {
+            const status = await reviewsAPI.pollStatus(review.id);
+            if (status.status !== 'processing') {
+              // Fetch the full review now that it's done
+              const full = await reviewsAPI.getById(review.id);
+              set({
+                currentReview: full,
+                originalCode: full.original_code || '',
+                reviewedCode: full.reviewed_code || '',
+              });
+              // Persist to localStorage so it survives logout/refresh
+              try {
+                localStorage.setItem(
+                  `review_pr_${prId}`,
+                  JSON.stringify({ review: full, timestamp: Date.now() })
+                );
+              } catch {}
+              return; // done
+            }
+            attempts++;
+            if (attempts < maxAttempts) {
+              setTimeout(poll, 2000);
+            }
+          } catch {
+            // Silently stop polling on error
+          }
+        };
+
+        setTimeout(poll, 2000);
+      }
     } catch (error: any) {
       set({ error: extractError(error, 'Failed to start review'), isReviewing: false });
       throw error;
@@ -454,7 +526,9 @@ export const useStore = create<AppState>((set, get) => ({
         pr_number: prNumber,
         account_id: selectedAccount?.id || currentReview?.github_account_id,
       });
-      // Refresh PR list after merge
+      // Mark merged, clear the selected PR so dashboard goes to empty state
+      set({ prMerged: true, selectedPR: null, currentReview: null });
+      // Refresh sidebar PR list
       if (selectedRepo) {
         await get().loadRepoPRs(selectedRepo.id, true);
       }
@@ -475,6 +549,12 @@ export const useStore = create<AppState>((set, get) => ({
     }
     try {
       await githubAPI.approvePR(prId, comment);
+      // Mark approved in store — persists until a new PR is selected
+      set({ prApproved: true });
+      // Persist to localStorage so it survives logout/refresh
+      try {
+        localStorage.setItem(`approved_pr_${selectedPR?.id}`, 'true');
+      } catch {}
     } catch (error: any) {
       set({ error: extractError(error, 'Failed to approve PR') });
       throw error;

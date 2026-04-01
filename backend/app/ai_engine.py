@@ -1,210 +1,267 @@
-from langchain_huggingface import HuggingFaceEndpoint
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+"""
+AI Engine — OpenRouter primary + Groq fallback.
+
+Both are FREE with no credit card required:
+
+  OpenRouter → https://openrouter.ai  (sign up, get API key, 50 req/day free)
+    Free models: meta-llama/llama-3.3-70b-instruct:free
+                 deepseek/deepseek-r1:free
+                 qwen/qwen3-coder-480b-instruct:free
+
+  Groq → https://console.groq.com  (14,400 req/day free, just email signup)
+    Free model: llama-3.3-70b-versatile
+
+Install:
+  pip install openai   ← covers both providers (OpenAI-compatible APIs)
+"""
+
 import json
+import asyncio
+from typing import Optional
+
 from app.config import settings
 from app.schemas import AIAnalysis, FeedbackItem
-import asyncio
 
-class CodeIssue(BaseModel):
-    severity: str = Field(description="high, medium, or low")
-    message: str = Field(description="Description of the issue")
-    line_number: Optional[int] = Field(description="Line number if applicable")
-    suggestion: str = Field(description="How to fix the issue")
 
-class CodeReview(BaseModel):
-    summary: str = Field(description="Brief summary of changes")
-    issues: List[CodeIssue] = Field(description="List of identified issues")
-    suggestions: List[str] = Field(description="General improvement suggestions")
-    safety_score: int = Field(description="0-100 safety score for auto-merge")
-    ready_for_merge: bool = Field(description="Whether code is safe to merge")
+# ── Prompt templates ──────────────────────────────────────────────────────────
 
-class MergeDecision(BaseModel):
-    should_merge: bool = Field(description="Whether to proceed with merge")
-    reason: str = Field(description="Reason for decision")
-    required_actions: List[str] = Field(description="Actions needed before merge")
+REVIEW_SYSTEM_PROMPT = """You are a senior software engineer doing a thorough code review.
+
+Analyze the code diff and return ONLY a valid JSON object. No markdown, no explanation, no backticks.
+
+JSON schema:
+{
+  "summary": "2-3 sentence overview of what changed",
+  "issues": [
+    {
+      "severity": "high|medium|low",
+      "message": "clear description of the issue",
+      "line_number": null,
+      "suggestion": "how to fix it"
+    }
+  ],
+  "suggestions": ["general improvement 1", "general improvement 2"],
+  "safety_score": 85,
+  "ready_for_merge": true
+}
+
+Safety score: 90-100=clean/merge, 70-89=minor issues, 50-69=needs work, 0-49=do not merge.
+Focus on: security, bugs, performance, bad practices. Skip formatting nitpicks.
+Return ONLY the JSON object."""
+
+
+IMPROVE_SYSTEM_PROMPT = """You are a senior software engineer.
+Given original code and review feedback, return ONLY the improved code with all fixes applied.
+No explanation, no markdown fences, just raw improved code."""
+
+
+PR_DESCRIPTION_SYSTEM = """You are a senior engineer writing clear PR descriptions.
+Return ONLY a valid JSON object, no markdown, no backticks:
+{
+  "title": "concise PR title under 72 chars",
+  "summary": "2-3 sentence overview of what this PR does and why",
+  "changes": ["specific change 1", "specific change 2"],
+  "testing": "how to test these changes",
+  "notes": "any breaking changes, or empty string"
+}"""
+
+
+# ── Provider calls ────────────────────────────────────────────────────────────
+
+def _get_async_client():
+    try:
+        from openai import AsyncOpenAI
+        return AsyncOpenAI
+    except ImportError:
+        raise RuntimeError("Run: pip install openai")
+
+
+async def _call_openrouter(system: str, user: str) -> str:
+    if not settings.OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+    AsyncOpenAI = _get_async_client()
+    client = AsyncOpenAI(
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://ai-pr-reviewer.app",
+            "X-Title": "AI PR Reviewer",
+        },
+    )
+    response = await client.chat.completions.create(
+        model=settings.OPENROUTER_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.2,
+        max_tokens=4096,
+    )
+    return response.choices[0].message.content.strip()
+
+
+async def _call_groq(system: str, user: str) -> str:
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY not set")
+    AsyncOpenAI = _get_async_client()
+    client = AsyncOpenAI(
+        api_key=settings.GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
+    )
+    response = await client.chat.completions.create(
+        model=settings.GROQ_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.2,
+        max_tokens=4096,
+    )
+    return response.choices[0].message.content.strip()
+
+
+async def _generate(system: str, user: str) -> str:
+    """Try OpenRouter first, auto-fallback to Groq on any error."""
+    if settings.OPENROUTER_API_KEY:
+        try:
+            result = await _call_openrouter(system, user)
+            print(f"[ai] OpenRouter OK ({settings.OPENROUTER_MODEL})")
+            return result
+        except Exception as e:
+            print(f"[ai] OpenRouter failed: {e} — trying Groq")
+
+    if settings.GROQ_API_KEY:
+        try:
+            result = await _call_groq(system, user)
+            print(f"[ai] Groq OK ({settings.GROQ_MODEL})")
+            return result
+        except Exception as e:
+            print(f"[ai] Groq failed: {e}")
+            raise
+
+    raise RuntimeError(
+        "No AI provider configured. Add to .env:\n"
+        "  OPENROUTER_API_KEY  (free at openrouter.ai)\n"
+        "  GROQ_API_KEY        (free at console.groq.com)"
+    )
+
+
+# ── JSON parsing ──────────────────────────────────────────────────────────────
+
+def _parse_json(text: str) -> dict:
+    cleaned = text.strip()
+    if "```" in cleaned:
+        lines = [l for l in cleaned.split("\n") if not l.strip().startswith("```")]
+        cleaned = "\n".join(lines).strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}") + 1
+    if start != -1 and end > start:
+        cleaned = cleaned[start:end]
+    return json.loads(cleaned)
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
 
 class AIEngine:
-    def __init__(self):
-        self.llm = HuggingFaceEndpoint(
-            repo_id=settings.HF_MODEL_NAME,
-            huggingfacehub_api_token=settings.HF_TOKEN,
-            task="text-generation",
-            max_new_tokens=2000,
-            temperature=0.2,
+
+    async def analyze_code(
+        self,
+        code_diff: str,
+        original_code: str,
+        repo_name: str = "",
+        branch_name: str = "",
+    ) -> AIAnalysis:
+        if not code_diff and not original_code:
+            return self._empty_analysis("No code provided.")
+
+        user_prompt = (
+            f"REPOSITORY: {repo_name or 'unknown'}\n"
+            f"BRANCH: {branch_name or 'unknown'}\n\n"
+            f"CODE DIFF:\n{code_diff[:12000]}"
         )
-        
-        self.review_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert code reviewer with 20+ years of experience.
-            Analyze code changes thoroughly and provide structured feedback.
-            
-            Focus on:
-            1. Security vulnerabilities (critical)
-            2. Bug potential (high priority)
-            3. Performance issues
-            4. Code quality and best practices
-            5. Readability and maintainability
-            
-            Provide a safety score (0-100) for auto-merge consideration.
-            Score below 70 = NOT safe for auto-merge.
-            Score 70-85 = Review required before merge.
-            Score 85+ = Safe for auto-merge.
-            
-            Return ONLY valid JSON matching the schema."""),
-            ("human", """ORIGINAL CODE:
-{original_code}
+        if original_code and original_code != code_diff:
+            user_prompt += f"\n\nORIGINAL FILE:\n{original_code[:3000]}"
 
-CODE DIFF:
-{code_diff}
-
-REPO: {repo_name}
-BRANCH: {branch_name}
-
-Analyze and return structured review.""")
-        ])
-        
-        self.review_chain = self.review_prompt | self.llm | JsonOutputParser(pydantic_object=CodeReview)
-        
-        self.merge_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a release manager deciding whether to merge a PR.
-            Consider:
-            - Code review safety score
-            - CI/CD status
-            - Branch protection rules
-            - Number of approvals needed
-            
-            Be conservative - when in doubt, require manual review."""),
-            ("human", """REVIEW SUMMARY: {review_summary}
-SAFETY SCORE: {safety_score}
-CI_STATUS: {ci_status}
-BRANCH: {branch_name}
-REQUIRED_REVIEWS: {required_reviews}
-CURRENT_APPROVALS: {current_approvals}
-
-Decide whether to auto-merge.""")
-        ])
-        
-        self.merge_chain = self.merge_prompt | self.llm | JsonOutputParser(pydantic_object=MergeDecision)
-        
-        self.improve_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a senior developer. Improve code based on review feedback.
-            Return ONLY the improved code, no explanations."""),
-            ("human", """ORIGINAL CODE:
-{original_code}
-
-REVIEW FEEDBACK:
-{feedback}
-
-Generate improved code with all suggestions applied.""")
-        ])
-        
-        self.improve_chain = self.improve_prompt | self.llm | StrOutputParser()
-    
-    async def analyze_code(self, code_diff: str, original_code: str, 
-                          repo_name: str = "", branch_name: str = "") -> AIAnalysis:
+        raw = ""
         try:
-            review = await asyncio.to_thread(
-                self.review_chain.invoke,
-                {
-                    "original_code": original_code,
-                    "code_diff": code_diff,
-                    "repo_name": repo_name,
-                    "branch_name": branch_name
-                }
-            )
-            
+            raw = await _generate(REVIEW_SYSTEM_PROMPT, user_prompt)
+            data = _parse_json(raw)
             issues = [
                 FeedbackItem(
-                    severity=issue.severity,
-                    message=issue.message,
-                    line_number=issue.line_number,
-                    suggestion=issue.suggestion
+                    severity=i.get("severity", "low"),
+                    message=i.get("message", ""),
+                    line_number=i.get("line_number"),
+                    suggestion=i.get("suggestion", ""),
                 )
-                for issue in review.issues
+                for i in data.get("issues", [])
             ]
-            
             return AIAnalysis(
-                summary=review.summary,
+                summary=data.get("summary", "Review completed."),
                 issues=issues,
-                suggestions=review.suggestions,
-                safety_score=review.safety_score,
-                ready_for_merge=review.ready_for_merge
+                suggestions=data.get("suggestions", []),
+                safety_score=max(0, min(100, int(data.get("safety_score", 50)))),
+                ready_for_merge=bool(data.get("ready_for_merge", False)),
             )
-            
+        except json.JSONDecodeError as e:
+            print(f"[ai] JSON parse error: {e} | raw: {raw[:300]}")
+            return self._error_analysis(f"AI returned invalid JSON: {e}")
         except Exception as e:
-            return AIAnalysis(
-                summary=f"Analysis encountered an error: {str(e)}",
-                issues=[
-                    FeedbackItem(
-                        severity="high",
-                        message="AI analysis failed. Manual review required.",
-                        suggestion="Please review the code manually"
-                    )
-                ],
-                suggestions=["Manual review required due to AI error"],
-                safety_score=0,
-                ready_for_merge=False
-            )
-    
+            print(f"[ai] analyze_code error: {e}")
+            return self._error_analysis(str(e))
+
     async def generate_reviewed_code(self, original_code: str, feedback: AIAnalysis) -> str:
+        if not original_code:
+            return ""
+        issues_text = "\n".join(
+            f"- [{i.severity.upper()}] {i.message} -> {i.suggestion}"
+            for i in feedback.issues
+        ) or "No critical issues."
+        user_prompt = (
+            f"ORIGINAL CODE:\n{original_code[:8000]}\n\n"
+            f"REVIEW SUMMARY: {feedback.summary}\n\n"
+            f"ISSUES TO FIX:\n{issues_text}\n\n"
+            f"Return the complete improved code."
+        )
         try:
-            improved_code = await asyncio.to_thread(
-                self.improve_chain.invoke,
-                {
-                    "original_code": original_code,
-                    "feedback": feedback.summary + "\n" + 
-                               "\n".join([f"- {i.message}" for i in feedback.issues])
-                }
-            )
-            return improved_code.strip()
+            return await _generate(IMPROVE_SYSTEM_PROMPT, user_prompt)
         except Exception as e:
-            return f"# Error generating reviewed code: {str(e)}\n{original_code}"
-    
-    async def decide_merge(self, review: AIAnalysis, ci_status: str,
-                          branch_name: str, required_reviews: int,
-                          current_approvals: int) -> MergeDecision:
+            print(f"[ai] generate_reviewed_code error: {e}")
+            return original_code
+
+    async def generate_pr_description(self, code_diff: str) -> dict:
+        if not code_diff:
+            return {"title": "Update code", "summary": "", "changes": [], "testing": "", "notes": ""}
+        user_prompt = f"CODE DIFF:\n{code_diff[:10000]}\n\nGenerate the PR description JSON."
+        raw = ""
         try:
-            decision = await asyncio.to_thread(
-                self.merge_chain.invoke,
-                {
-                    "review_summary": review.summary,
-                    "safety_score": review.safety_score,
-                    "ci_status": ci_status,
-                    "branch_name": branch_name,
-                    "required_reviews": required_reviews,
-                    "current_approvals": current_approvals
-                }
-            )
-            return decision
+            raw = await _generate(PR_DESCRIPTION_SYSTEM, user_prompt)
+            return _parse_json(raw)
         except Exception as e:
-            return MergeDecision(
-                should_merge=False,
-                reason=f"Merge decision error: {str(e)}",
-                required_actions=["Manual review required"]
-            )
-    
-    async def chat_with_code(self, code: str, question: str, 
-                            review_context: Optional[AIAnalysis] = None) -> str:
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful code assistant. Answer questions about code clearly."),
-            ("human", "CODE:\n{code}\n\nREVIEW CONTEXT:\n{context}\n\nQUESTION:\n{question}")
-        ])
-        
-        chain = prompt | self.llm | StrOutputParser()
-        
+            print(f"[ai] generate_pr_description error: {e}")
+            return {"title": "Code changes", "summary": "Could not auto-generate.", "changes": [], "testing": "Manual testing required.", "notes": str(e)}
+
+    async def chat_with_code(self, code: str, question: str, review_context: Optional[AIAnalysis] = None) -> str:
+        context = f"\nREVIEW SUMMARY: {review_context.summary}" if review_context else ""
+        system = "You are a helpful code assistant. Answer questions clearly and concisely."
+        user_prompt = f"CODE:\n{code[:6000]}{context}\n\nQUESTION: {question}"
         try:
-            response = await asyncio.to_thread(
-                chain.invoke,
-                {
-                    "code": code,
-                    "context": review_context.summary if review_context else "No review context",
-                    "question": question
-                }
-            )
-            return response.strip()
+            return await _generate(system, user_prompt)
         except Exception as e:
-            return f"Error: {str(e)}"
+            return f"Error: {e}"
+
+    @staticmethod
+    def _empty_analysis(reason: str) -> AIAnalysis:
+        return AIAnalysis(summary=reason, issues=[], suggestions=[], safety_score=0, ready_for_merge=False)
+
+    @staticmethod
+    def _error_analysis(error: str) -> AIAnalysis:
+        return AIAnalysis(
+            summary=f"AI review failed: {error}",
+            issues=[FeedbackItem(severity="high", message="AI analysis failed — review manually.", suggestion="Check server logs.")],
+            suggestions=["Manual review required."],
+            safety_score=0,
+            ready_for_merge=False,
+        )
+
 
 ai_engine = AIEngine()
