@@ -178,3 +178,6 @@ Desktop.ini
 # ===========================================
 # Keep README.md, ignore auto-generated docs
 *.md.backup
+
+#// code
+stripe_migration_code.py
