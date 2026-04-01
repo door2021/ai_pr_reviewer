@@ -74,6 +74,11 @@ export const usersAPI = {
     const res = await api.put('/users/me/settings', data);
     return res.data;
   },
+
+  changePassword: async (data: { current_password: string; new_password: string }) => {
+    const res = await api.put('/users/me/password', data);
+    return res.data;
+  },
 };
 
 // ===========================================
