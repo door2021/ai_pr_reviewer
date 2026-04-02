@@ -35,7 +35,7 @@ services:
       - .env  
     environment:
       # - DATABASE_URL=mysql+pymysql://root:@mysql:3306/ai_pr
-      - DATABASE_URL=mysql://root:VbujtteUDoBYgtgldVreLIXupIhiyuhr@mysql:3306/railway
+      - DATABASE_URL=mysql+pymysql://root:VbujtteUDoBYgtgldVreLIXupIhiyuhr@mysql:3306/railway
       # - REDIS_URL=redis://redis:6379
       - REDIS_URL=redis://default:nbgcAeefMomZLoCfJdGYqHRLbZvRpAyP@redis:6379
       - SECRET_KEY=${SECRET_KEY}
