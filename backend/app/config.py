@@ -87,9 +87,13 @@ class Settings(BaseSettings):
     STRIPE_PRICE_PRO: str = ""     # $59/month Pro plan Price ID
 
     # CORS
-    CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
-    )
+    # CORS_ORIGINS: List[str] = Field(
+    #     default=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+    # )
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+
+    def get_cors_origins(self) -> list:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     class Config:
         env_file = ".env"
