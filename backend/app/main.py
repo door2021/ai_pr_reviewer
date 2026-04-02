@@ -74,6 +74,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup():
+    """Create all DB tables on startup if they don't exist"""
+    import app.models  # ensure all models are imported before create_all
+    Base.metadata.create_all(bind=engine)
+    print("[startup] Database tables verified/created")
+
 # ── Routers ───────────────────────────────────────────────────────────────────
 from app.routers import github as github_router
 from app.routers import reviews as reviews_router
