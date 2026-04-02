@@ -347,7 +347,7 @@ export default function Dashboard() {
   const handleApprove = async () => {
     setIsApproving(true); setError(null);
     try {
-      await approvePR('Approved via AI PR Reviewer');
+      await approvePR('Approved via DeepReview');
       setSuccessMsg('PR approved on GitHub ✓');
     } catch { }
     finally { setIsApproving(false); }
@@ -394,7 +394,7 @@ export default function Dashboard() {
               <h1 className="font-semibold text-white truncate">
                 {selectedPR
                   ? `${selectedRepo?.repo_full_name} / PR #${selectedPR.pr_number} — ${selectedPR.title}`
-                  : 'AI PR Reviewer'}
+                  : 'DeepReview'}
               </h1>
               {selectedPR && (
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium border flex-shrink-0 ${prApproved && !prMerged
