@@ -214,11 +214,10 @@ export default function Sidebar() {
       >
         {/* Header */}
         <div className="h-16 border-b border-border flex items-center px-4 gap-2 flex-shrink-0">
-          <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
-            {/* <GitPullRequest className="w-5 h-5 text-white" /> */}
-            <img src="/deepreview.svg" alt="Logo" className="w-8 h-8 rounded-lg" />
+          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+            <img src="/logo.png" alt="DeepReview" className="w-full h-full object-cover" />
           </div>
-          {!isNarrow && <span className="font-bold text-lg text-white truncate">AI Reviewer</span>}
+          {!isNarrow && <span className="font-bold text-lg text-white truncate">DeepReview</span>}
         </div>
 
         {/* Import Button */}
