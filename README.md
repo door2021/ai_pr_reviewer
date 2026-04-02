@@ -2,7 +2,8 @@
 
 > Review your pull requests with AI. Get a safety score, issue breakdown, and merge recommendation in seconds.
 
-![DeepReview Dashboard](screenshots/dashboard.png)
+<img width="1509" height="783" alt="dashboard" src="https://github.com/user-attachments/assets/58f77835-de24-4f4b-8c3b-1fcc787b2162" />
+
 
 ---
 
@@ -39,7 +40,9 @@ Everything happens from a single dashboard. No tab switching, no GitHub back-and
 
 | Login | Dashboard | AI Review |
 |-------|-----------|-----------|
-| ![Login](screenshots/login.png) | ![Dashboard](screenshots/dashboard.png) | ![Review](screenshots/review.png) |
+<img width="1509" height="783" alt="login" src="https://github.com/user-attachments/assets/cc4e2b51-5160-4a79-947b-2de478ef2f10" />
+<img width="1509" height="783" alt="dashboard" src="https://github.com/user-attachments/assets/a255cb48-8a89-4d7b-a78e-98ad962f7dcd" />
+<img width="1509" height="783" alt="review" src="https://github.com/user-attachments/assets/d5fe5a53-25f8-482a-915f-a12a5453edaf" />
 
 ---
 
