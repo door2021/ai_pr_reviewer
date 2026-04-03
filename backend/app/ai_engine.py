@@ -139,11 +139,7 @@ async def _generate(system: str, user: str) -> str:
             print(f"[ai] Groq failed: {e}")
             raise
 
-    raise RuntimeError(
-        "No AI provider configured. Add to .env:\n"
-        "  OPENROUTER_API_KEY  (free at openrouter.ai)\n"
-        "  GROQ_API_KEY        (free at console.groq.com)"
-    )
+    raise RuntimeError("AI service is not configured. Contact support.")
 
 
 # ── JSON parsing ──────────────────────────────────────────────────────────────
@@ -204,10 +200,10 @@ class AIEngine:
             )
         except json.JSONDecodeError as e:
             print(f"[ai] JSON parse error: {e} | raw: {raw[:300]}")
-            return self._error_analysis(f"AI returned invalid JSON: {e}")
+            return self._error_analysis("parse_error")
         except Exception as e:
             print(f"[ai] analyze_code error: {e}")
-            return self._error_analysis(str(e))
+            return self._error_analysis("general_error")
 
     async def generate_reviewed_code(self, original_code: str, feedback: AIAnalysis) -> str:
         if not original_code:
@@ -238,7 +234,7 @@ class AIEngine:
             return _parse_json(raw)
         except Exception as e:
             print(f"[ai] generate_pr_description error: {e}")
-            return {"title": "Code changes", "summary": "Could not auto-generate.", "changes": [], "testing": "Manual testing required.", "notes": str(e)}
+            return {"title": "Code changes", "summary": "Could not auto-generate description.", "changes": [], "testing": "Manual testing required.", "notes": ""}
 
     async def chat_with_code(self, code: str, question: str, review_context: Optional[AIAnalysis] = None) -> str:
         context = f"\nREVIEW SUMMARY: {review_context.summary}" if review_context else ""
@@ -247,18 +243,28 @@ class AIEngine:
         try:
             return await _generate(system, user_prompt)
         except Exception as e:
-            return f"Error: {e}"
+            print(f"[ai] chat_with_code error: {e}")
+            return "Something went wrong. Please try again."
 
     @staticmethod
     def _empty_analysis(reason: str) -> AIAnalysis:
         return AIAnalysis(summary=reason, issues=[], suggestions=[], safety_score=0, ready_for_merge=False)
 
     @staticmethod
-    def _error_analysis(error: str) -> AIAnalysis:
+    def _error_analysis(error_type: str = "general_error") -> AIAnalysis:
+        messages = {
+            "parse_error": "The review could not be processed. Please try again.",
+            "general_error": "The review could not be completed. Please try again.",
+        }
+        summary = messages.get(error_type, "The review could not be completed. Please try again.")
         return AIAnalysis(
-            summary=f"AI review failed: {error}",
-            issues=[FeedbackItem(severity="high", message="AI analysis failed — review manually.", suggestion="Check server logs.")],
-            suggestions=["Manual review required."],
+            summary=summary,
+            issues=[FeedbackItem(
+                severity="high",
+                message="Review could not be completed — please try again.",
+                suggestion="If this keeps happening, try syncing the PR and reviewing again."
+            )],
+            suggestions=["Try reviewing this PR again."],
             safety_score=0,
             ready_for_merge=False,
         )

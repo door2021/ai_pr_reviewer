@@ -369,8 +369,8 @@
 #                     repo=repo_full_name,
 #                     pr_number=pr_number,
 #                     comment=(
-#                         "👋 **AI PR Reviewer** is watching this PR.\n\n"
-#                         f"Open your [AI PR Reviewer dashboard]({settings.FRONTEND_URL}/dashboard) "
+#                         "👋 **DeepReviewAI** is watching this PR.\n\n"
+#                         f"Open your [DeepReviewAI dashboard]({settings.FRONTEND_URL}/dashboard) "
 #                         "to run an AI review and get feedback on this PR."
 #                     )
 #                 )
@@ -549,7 +549,7 @@
 #                 await client.merge_pr(
 #                     repo=repo_full_name,
 #                     pr_number=pr.pr_number,
-#                     commit_title=f"Auto-merged by AI PR Reviewer (score: {score}/100)",
+#                     commit_title=f"Auto-merged by DeepReviewAI (score: {score}/100)",
 #                     merge_method="squash",
 #                 )
 #                 review.github_action_taken = "merged"
@@ -580,7 +580,7 @@
 #         suggestions = analysis.suggestions if hasattr(analysis, 'suggestions') else analysis.get('suggestions', [])
 #         ready = analysis.ready_for_merge if hasattr(analysis, 'ready_for_merge') else analysis.get('ready_for_merge', False)
 #     except Exception:
-#         return "✅ AI PR Reviewer has reviewed this PR."
+#         return "✅ DeepReviewAI has reviewed this PR."
 
 #     # Score emoji
 #     if score >= 85:
@@ -591,7 +591,7 @@
 #         score_emoji = "🔴"
 
 #     lines = [
-#         "## 🤖 AI PR Review",
+#         "## 🤖 DeepReviewAI",
 #         "",
 #         f"**Safety Score:** {score_emoji} {score}/100",
 #         "",
@@ -629,7 +629,7 @@
 #     lines += [
 #         "",
 #         "---",
-#         f"*Reviewed by [AI PR Reviewer]({settings.FRONTEND_URL}) • [View in Dashboard]({settings.FRONTEND_URL}/dashboard)*",
+#         f"*Reviewed by [DeepReviewAI]({settings.FRONTEND_URL}) • [View in Dashboard]({settings.FRONTEND_URL}/dashboard)*",
 #     ]
 
 #     return "\n".join(lines)

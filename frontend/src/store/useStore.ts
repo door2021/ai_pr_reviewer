@@ -521,7 +521,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     try {
       const result = await githubAPI.mergePR(prId, mergeMethod, {
-        commit_title: `Merged PR #${prNumber} (${headBranch} → ${targetBranch}) via AI PR Reviewer`,
+        commit_title: `Merged PR #${prNumber} (${headBranch} → ${targetBranch}) via DeepReviewAI`,
         repo_full_name: repoFullName,
         pr_number: prNumber,
         account_id: selectedAccount?.id || currentReview?.github_account_id,
@@ -540,7 +540,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // Approve the PR on GitHub
-  approvePR: async (comment = 'Approved via AI PR Reviewer') => {
+  approvePR: async (comment = 'Approved via DeepReviewAI') => {
     const { currentReview, selectedPR } = get();
     const prId = currentReview?.pr_id || selectedPR?.id;
     if (!prId) {

@@ -1,2 +1,2 @@
-# AI PR Reviewer Backend
+# DeepReviewAI Backend
 __version__ = "2.0.0"

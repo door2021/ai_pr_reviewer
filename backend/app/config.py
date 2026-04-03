@@ -5,7 +5,7 @@ from typing import Optional, List
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "AI PR Reviewer"
+    APP_NAME: str = "DeepReviewAI"
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
     VERSION: str = "2.0.0"
