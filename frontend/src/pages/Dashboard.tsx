@@ -347,6 +347,37 @@ export default function Dashboard() {
   useEffect(() => { setSuccessMsg(''); setComment(''); setShowDescModal(false); setZeroNoise(false); }, [selectedPR?.id]);
   useEffect(() => { setActiveTab('prs'); }, [selectedRepo?.id]);
 
+  // ── Auto mode: poll for existing review when PR is opened ──────
+  useEffect(() => {
+    if (!selectedPR || !isAutoMode || currentReview) return;
+
+    // Poll every 2s until review is found or completed
+    const interval = setInterval(async () => {
+      try {
+        const reviews = await reviewsAPI.getAll();
+        const match = reviews.find((r: any) =>
+          r.pr_id === selectedPR.id || r.pr_number === selectedPR.pr_number
+        );
+        if (match) {
+          // Found a review — load it into store
+          const { setCurrentReview, setCode } = useStore.getState();
+          setCurrentReview(match);
+          if (match.original_code || match.reviewed_code) {
+            setCode(match.original_code || '', match.reviewed_code || '');
+          }
+          if (match.status !== 'processing') {
+            clearInterval(interval);
+          }
+        }
+      } catch {}
+    }, 2000);
+
+    // Stop polling after 60s
+    const timeout = setTimeout(() => clearInterval(interval), 60000);
+
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  }, [selectedPR?.id, isAutoMode]);
+
   const closePR = () => {
     selectPR(null);
     setPRFiles([]);
@@ -449,8 +480,26 @@ export default function Dashboard() {
                   <span className="hidden sm:inline">PR Description</span>
                 </Button>
 
-                {/* Review */}
-                {!isAutoMode && (
+                {/* Review — manual mode: user clicks; auto mode: show status */}
+                {isAutoMode ? (
+                  // Auto mode — show review status instead of button
+                  currentReview?.status === 'processing' || isReviewing ? (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-medium">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Auto-reviewing…
+                    </div>
+                  ) : currentReview?.status === 'completed' || currentReview?.status === 'auto_merged' ? (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Auto-reviewed ✓
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-medium">
+                      <Zap className="w-3.5 h-3.5" />
+                      Waiting for sync…
+                    </div>
+                  )
+                ) : (
                   <Button variant="primary" size="sm" className="gap-2"
                     onClick={() => startReview()}
                     disabled={isReviewing || !!currentReview || actionsLocked}>
@@ -535,6 +584,24 @@ export default function Dashboard() {
         {successMsg && (
           <div className="mx-6 mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm flex items-center gap-2 flex-shrink-0">
             <CheckCircle className="w-4 h-4" />{successMsg}
+          </div>
+        )}
+
+        {/* ── Auto mode — merge recommendation banner ── */}
+        {isAutoMode && currentReview?.status === 'completed' && currentReview?.safety_score !== undefined && (
+          <div className={`mx-6 mt-3 p-3 rounded-lg border text-sm flex items-center gap-2 flex-shrink-0 ${
+            currentReview.safety_score >= 80
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              : currentReview.safety_score >= 60
+              ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
+              : 'bg-red-500/10 border-red-500/20 text-red-400'
+          }`}>
+            {currentReview.safety_score >= 80
+              ? <><CheckCircle className="w-4 h-4 flex-shrink-0" /><span><strong>Score {currentReview.safety_score}/100 — Safe to merge.</strong> AI reviewed and posted a comment on GitHub. You can now approve and merge.</span></>
+              : currentReview.safety_score >= 60
+              ? <><AlertCircle className="w-4 h-4 flex-shrink-0" /><span><strong>Score {currentReview.safety_score}/100 — Review needed.</strong> AI found issues and commented on GitHub. Check before merging.</span></>
+              : <><AlertCircle className="w-4 h-4 flex-shrink-0" /><span><strong>Score {currentReview.safety_score}/100 — Do not merge.</strong> AI found critical issues and commented on GitHub. Fix before merging.</span></>
+            }
           </div>
         )}
         {installedBanner && (
