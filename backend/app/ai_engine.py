@@ -37,7 +37,8 @@ JSON schema:
       "severity": "high|medium|low",
       "message": "clear description of the issue",
       "line_number": null,
-      "suggestion": "how to fix it"
+      "suggestion": "how to fix it",
+      "debt_type": "missing_tests|missing_error_handling|complexity|hardcoded_values|security|dead_code|duplication|outdated_patterns|other"
     }
   ],
   "suggestions": ["general improvement 1", "general improvement 2"],
@@ -47,6 +48,7 @@ JSON schema:
 
 Safety score: 90-100=clean/merge, 70-89=minor issues, 50-69=needs work, 0-49=do not merge.
 Focus on: security, bugs, performance, bad practices. Skip formatting nitpicks.
+debt_type must be one of: missing_tests, missing_error_handling, complexity, hardcoded_values, security, dead_code, duplication, outdated_patterns, other.
 Return ONLY the JSON object."""
 
 
@@ -85,7 +87,7 @@ async def _call_openrouter(system: str, user: str) -> str:
         base_url="https://openrouter.ai/api/v1",
         default_headers={
             "HTTP-Referer": "https://ai-pr-reviewer.app",
-            "X-Title": "AI PR Reviewer",
+            "X-Title": "DeepReviewAI",
         },
     )
     response = await client.chat.completions.create(

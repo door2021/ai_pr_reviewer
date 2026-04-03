@@ -300,3 +300,17 @@ export const billingAPI = {
     return res.data as { portal_url: string };
   },
 };
+
+// ===========================================
+// DEBT API
+// ===========================================
+export const debtAPI = {
+  getSummary: async (repoId: number, days = 90) => {
+    const res = await api.get(`/debt/repo/${repoId}/summary`, { params: { days } });
+    return res.data;
+  },
+  resolveItem: async (repoId: number, itemId: number) => {
+    const res = await api.post(`/debt/repo/${repoId}/items/${itemId}/resolve`);
+    return res.data;
+  },
+};
