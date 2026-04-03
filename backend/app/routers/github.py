@@ -895,7 +895,7 @@ async def approve_pr(
         await client.approve_pr(
             pr.repo.repo_full_name,
             pr.pr_number,
-            comment or "Approved via AI PR Reviewer"
+            comment or "Approved via DeepReviewAI"
         )
         return {"message": "PR approved on GitHub", "success": True}
     except Exception as e:

@@ -44,7 +44,7 @@
 
 # @app.get("/")
 # async def root():
-#     return {"message": "AI PR Reviewer API", "version": "3.0.0"}
+#     return {"message": "DeepReviewAI API", "version": "3.0.0"}
 
 # @app.get("/health")
 # async def health_check():

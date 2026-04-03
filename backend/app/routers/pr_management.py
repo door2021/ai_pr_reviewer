@@ -44,7 +44,7 @@ async def approve_pr(
     
     try:
         client = get_github_client(github_account.access_token)
-        comment = request_data.comment if request_data else "Approved via AI PR Reviewer"
+        comment = request_data.comment if request_data else "Approved via DeepReviewAI"
         await client.approve_pr(review.repo_full_name, review.pr_number, comment)
         
         review.status = "approved"
@@ -133,7 +133,7 @@ async def merge_pr(
         client = get_github_client(github_account.access_token)
         
         merge_method = request_data.merge_method.value if request_data else "squash"
-        commit_title = request_data.commit_title if request_data else f"Merged via AI PR Reviewer"
+        commit_title = request_data.commit_title if request_data else f"Merged via DeepReviewAI"
         
         result = await client.merge_pr(
             review.repo_full_name,
