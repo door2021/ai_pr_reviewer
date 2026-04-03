@@ -173,6 +173,7 @@ class FeedbackItem(BaseModel):
     message: str
     line_number: Optional[int] = None
     suggestion: Optional[str] = None
+    debt_type: Optional[str] = None  # for Technical Debt Controller
 
 
 class AIAnalysis(BaseModel):
