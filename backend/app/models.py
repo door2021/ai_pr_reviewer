@@ -141,3 +141,21 @@ class ChatMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     review = relationship("Review", back_populates="messages")
+
+
+class DebtItem(Base):
+    __tablename__ = "debt_items"
+
+    id          = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    user_id     = Column(Integer, ForeignKey("users.id"), nullable=False)
+    repo_id     = Column(BigInteger, nullable=False, index=True)
+    pr_id       = Column(BigInteger, nullable=True)
+    pr_number   = Column(Integer, nullable=True)
+    review_id   = Column(Integer, ForeignKey("reviews.id"), nullable=False)
+    file_path   = Column(String(500), nullable=True)
+    debt_type   = Column(String(50), nullable=False)
+    severity    = Column(String(20), nullable=False, default="medium")
+    description = Column(Text, nullable=True)
+    suggestion  = Column(Text, nullable=True)
+    is_resolved = Column(Boolean, default=False, nullable=False)
+    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)

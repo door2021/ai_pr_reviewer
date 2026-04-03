@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from app.database import get_db
-from app.models import User, Review, ChatMessage, GitHubAccount, GitHubRepoImport, GitHubPR
+from app.models import User, Review, ChatMessage, GitHubAccount, GitHubRepoImport, GitHubPR, DebtItem
 from app.schemas import (
     ReviewCreate,
     ReviewUpdate,
@@ -104,6 +104,43 @@ async def create_review(
     return review
 
 
+VALID_DEBT_TYPES = {
+    "missing_tests", "missing_error_handling", "complexity",
+    "hardcoded_values", "security", "dead_code",
+    "duplication", "outdated_patterns", "other"
+}
+
+def _save_debt_items(db, review, analysis):
+    """Extract debt items from review issues and persist them."""
+    try:
+        for issue in analysis.issues:
+            raw_type = getattr(issue, "debt_type", None) or "other"
+            debt_type = raw_type if raw_type in VALID_DEBT_TYPES else "other"
+
+            # Skip low-noise issues with no real debt signal
+            if issue.severity == "low" and debt_type == "other":
+                continue
+
+            item = DebtItem(
+                user_id=review.user_id,
+                repo_id=review.imported_repo_id or 0,
+                pr_id=review.pr_id,
+                pr_number=review.pr_number,
+                review_id=review.id,
+                file_path=None,           # file_path added in future when we have per-file diffs
+                debt_type=debt_type,
+                severity=issue.severity,
+                description=issue.message,
+                suggestion=issue.suggestion,
+                is_resolved=False,
+            )
+            db.add(item)
+        db.commit()
+    except Exception as e:
+        print(f"[debt] failed to save debt items for review {review.id}: {e}")
+        db.rollback()
+
+
 async def process_ai_review(
     review_id: int,
     code_diff: str,
@@ -136,6 +173,9 @@ async def process_ai_review(
             review.status = "auto_merged"
 
         db.commit()
+
+        # ── Save debt items from this review ──────────────────────────────
+        _save_debt_items(db, review, analysis)
 
     except Exception as e:
         try:
