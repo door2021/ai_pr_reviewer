@@ -429,6 +429,166 @@ async def sync_repo(
     return {"message": f"Synced successfully — {pr_count} open PR(s)", "success": True}
 
 
+def _build_review_comment(analysis) -> str:
+    """Format AI analysis into a clean GitHub PR comment."""
+    score = analysis.safety_score
+    if score >= 80:
+        score_badge = f"🟢 **Safety Score: {score}/100** — Looks good"
+    elif score >= 60:
+        score_badge = f"🟡 **Safety Score: {score}/100** — Needs attention"
+    else:
+        score_badge = f"🔴 **Safety Score: {score}/100** — Do not merge yet"
+
+    lines = [
+        "## 🤖 DeepReview — AI Code Review",
+        "",
+        score_badge,
+        "",
+        f"**Summary:** {analysis.summary}",
+        "",
+    ]
+
+    # Issues by severity
+    high   = [i for i in analysis.issues if i.severity == "high"]
+    medium = [i for i in analysis.issues if i.severity == "medium"]
+    low    = [i for i in analysis.issues if i.severity == "low"]
+
+    if high:
+        lines.append("### 🔴 Critical Issues")
+        for issue in high:
+            lines.append(f"- **{issue.message}**")
+            if issue.suggestion:
+                lines.append(f"  - 💡 {issue.suggestion}")
+        lines.append("")
+
+    if medium:
+        lines.append("### 🟡 Warnings")
+        for issue in medium:
+            lines.append(f"- {issue.message}")
+            if issue.suggestion:
+                lines.append(f"  - 💡 {issue.suggestion}")
+        lines.append("")
+
+    if low:
+        lines.append("### 🔵 Minor Issues")
+        for issue in low:
+            lines.append(f"- {issue.message}")
+        lines.append("")
+
+    if not analysis.issues:
+        lines.append("✅ No issues found.")
+        lines.append("")
+
+    # Merge recommendation
+    if analysis.ready_for_merge:
+        lines.append("✅ **Ready to merge** — no blocking issues found.")
+    else:
+        lines.append("⚠️ **Not ready to merge** — please address the issues above.")
+
+    lines.append("")
+    lines.append("---")
+    lines.append("*Review by [DeepReview](https://deepreview.vercel.app) — AI PR Intelligence*")
+
+    return "\n".join(lines)
+
+
+def _run_auto_review(review_id: int, repo_full_name: str, pr_number: int, access_token: str):
+    """
+    Runs in a daemon thread — fetches PR diff from GitHub then
+    calls the AI engine to complete the review.
+    """
+    import asyncio
+    import httpx
+    from app.database import SessionLocal
+    from app.models import Review as ReviewModel, DebtItem
+    from app.ai_engine import ai_engine
+
+    db = SessionLocal()
+    try:
+        review = db.query(ReviewModel).filter(ReviewModel.id == review_id).first()
+        if not review:
+            return
+
+        # Fetch diff from GitHub
+        headers = {
+            "Authorization": f"token {access_token}",
+            "Accept": "application/vnd.github.v3.diff",
+        }
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(
+                f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}",
+                headers=headers,
+            )
+
+        diff = resp.text if resp.status_code == 200 else ""
+
+        review.code_diff = diff
+        review.original_code = diff
+        db.commit()
+
+        # Run AI analysis
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            analysis = loop.run_until_complete(
+                ai_engine.analyze_code(diff, diff, repo_full_name, review.branch_name or "")
+            )
+        finally:
+            loop.close()
+
+        review.ai_feedback = analysis.dict()
+        review.safety_score = analysis.safety_score
+        review.status = "completed"
+
+        from app.models import User as UserModel
+        user = db.query(UserModel).filter(UserModel.id == review.user_id).first()
+
+        db.commit()
+
+        # Save debt items
+        from app.routers.reviews import _save_debt_items
+        _save_debt_items(db, review, analysis)
+
+        # ── Post AI summary as GitHub comment ────────────────────────
+        # Criteria: always comment if score < 80 OR any high severity issues exist
+        # Skip comment if score >= 80 AND no high severity issues (clean PR = no noise)
+        has_high_issues = any(i.severity == "high" for i in analysis.issues)
+        should_comment  = analysis.safety_score < 80 or has_high_issues
+
+        if should_comment:
+            try:
+                comment = _build_review_comment(analysis)
+                comment_headers = {
+                    "Authorization": f"token {access_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                }
+                with httpx.Client(timeout=15) as client:
+                    client.post(
+                        f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments",
+                        headers=comment_headers,
+                        json={"body": comment},
+                    )
+                print(f"[auto] Posted review comment on PR #{pr_number} (score={analysis.safety_score})")
+            except Exception as comment_err:
+                print(f"[auto] Failed to post comment: {comment_err}")
+        else:
+            print(f"[auto] Skipped comment on PR #{pr_number} — clean PR (score={analysis.safety_score}, no high issues)")
+
+        print(f"[auto] Review {review_id} completed — score {analysis.safety_score}")
+
+    except Exception as e:
+        print(f"[auto] Review {review_id} failed: {e}")
+        try:
+            review = db.query(ReviewModel).filter(ReviewModel.id == review_id).first()
+            if review:
+                review.status = "failed"
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
 def sync_repo_prs(repo_id: int, access_token: str):
     """
     Sync open PRs for a repo from GitHub.
@@ -509,6 +669,50 @@ def sync_repo_prs(repo_id: int, access_token: str):
                     is_active=True
                 )
                 db.add(new_pr)
+                db.flush()  # get new_pr.id without full commit
+
+                # ── Auto-review trigger ──────────────────────────────
+                # If the repo owner has automatic mode, kick off a review
+                # for every newly discovered PR
+                try:
+                    account = repo.github_account
+                    if account:
+                        user = db.query(User).filter(User.id == account.user_id).first()
+                        if user and user.review_mode == "automatic":
+                            from app.models import Review as ReviewModel
+                            # Only create review if one doesn't already exist for this PR
+                            existing_review = db.query(ReviewModel).filter(
+                                ReviewModel.pr_id == new_pr.id,
+                                ReviewModel.user_id == user.id,
+                            ).first()
+                            if not existing_review:
+                                review = ReviewModel(
+                                    user_id=user.id,
+                                    github_account_id=account.id,
+                                    imported_repo_id=repo_id,
+                                    pr_id=new_pr.id,
+                                    pr_url=f"https://github.com/{repo.repo_full_name}/pull/{new_pr.pr_number}",
+                                    pr_number=new_pr.pr_number,
+                                    repo_full_name=repo.repo_full_name,
+                                    branch_name=new_pr.head_ref,
+                                    target_branch=new_pr.base_ref,
+                                    pr_title=new_pr.title,
+                                    code_diff="",
+                                    original_code="",
+                                    status="processing",
+                                )
+                                db.add(review)
+                                db.flush()
+                                # Fetch diff and run AI review in a thread
+                                import threading
+                                threading.Thread(
+                                    target=_run_auto_review,
+                                    args=(review.id, repo.repo_full_name, new_pr.pr_number, access_token),
+                                    daemon=True
+                                ).start()
+                                print(f"[auto] Triggered review for PR #{new_pr.pr_number} in {repo.repo_full_name}")
+                except Exception as auto_err:
+                    print(f"[auto] Failed to trigger auto review: {auto_err}")
 
         # Mark PRs no longer in the open list as closed
         tracked_open = db.query(GitHubPR).filter(
