@@ -6,7 +6,7 @@ from app.config import settings
 engine = create_engine(
     settings.DATABASE_UrL,
     pool_pre_ping=True,
-    pool_recycle3600,
+    pool_recycle=3600,
     echo=settings.DEBUG
 )
 
