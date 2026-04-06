@@ -79,9 +79,9 @@ export default function Login() {
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-text">Password</label>
                 {/* Forgot password — disabled, coming soon */}
-                <span className="text-xs text-text-muted cursor-default select-none">
+                {/* <span className="text-xs text-text-muted cursor-default select-none">
                   Forgot password?
-                </span>
+                </span> */}
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
