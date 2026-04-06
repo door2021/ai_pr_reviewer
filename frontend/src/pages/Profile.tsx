@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { User, ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { usersAPI } from '@/lib/api';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -15,6 +16,8 @@ export default function Profile() {
     email: '',
     avatar_url: '',
   });
+  const [successMsg, setSuccessMsg] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -27,19 +30,22 @@ export default function Profile() {
   }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      // Call API to update profile
-      // For now, just update local state
-      await loadUserProfile();
-      navigate('/settings');
-    } catch (error) {
-      console.error('Failed to update profile:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  e.preventDefault();
+  setIsLoading(true);
+  try {
+    await usersAPI.updateProfile({
+      full_name: formData.full_name,
+      avatar_url: formData.avatar_url || undefined,
+    });
+    await loadUserProfile(); // refresh store so sidebar name updates
+    setSuccessMsg('Profile updated ✓');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  } catch (error: any) {
+    setError(error?.response?.data?.detail || 'Failed to update profile');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -62,6 +68,16 @@ export default function Profile() {
           </CardHeader>
 
           <CardContent>
+            {successMsg && (
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+                ✓ {successMsg}
+              </div>
+            )}
+            {error && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                {error}
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
                 label="Full Name"

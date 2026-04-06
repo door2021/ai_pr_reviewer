@@ -495,18 +495,20 @@ export default function Dashboard() {
 
             {selectedPR && (
               <>
-                {/* Generate Description button — always available when PR is open */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 border-dashed"
-                  onClick={() => setShowDescModal(true)}
-                  disabled={prFiles.length === 0 || loadingFiles}
-                  title={prFiles.length === 0 ? 'Wait for files to load' : 'Generate AI PR description'}
-                >
-                  <FileText className="w-3.5 h-3.5 text-text-muted" />
-                  <span className="hidden sm:inline">PR Description</span>
-                </Button>
+                {/* Generate Description — only useful before review exists */}
+                {!currentReview && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 border-dashed"
+                    onClick={() => setShowDescModal(true)}
+                    disabled={prFiles.length === 0 || loadingFiles}
+                    title={prFiles.length === 0 ? 'Wait for files to load' : 'Generate AI PR description'}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-text-muted" />
+                    <span className="hidden sm:inline">PR Description</span>
+                  </Button>
+                )}
 
                 {/* Review — manual mode: user clicks; auto mode: show status */}
                 {isAutoMode ? (
