@@ -348,21 +348,36 @@ export default function Dashboard() {
   useEffect(() => { setActiveTab('prs'); }, [selectedRepo?.id]);
 
   // ── Auto mode: poll for existing review when PR is opened ──────
-  // Uses selectedPR.id only in deps — NOT currentReview — to avoid
-  // effect re-running and cancelling interval when review is found
   useEffect(() => {
     if (!selectedPR || !isAutoMode) return;
 
+    // If review already exists and is completed — no need to poll
+    const existing = useStore.getState().currentReview;
+    if (existing && existing.status !== 'processing') return;
+
+    let stopped = false;
     let attempts = 0;
     const MAX_ATTEMPTS = 20;
-    let intervalId: ReturnType<typeof setInterval>;
+
+    // Use a ref-like object so clearInterval always has the right id
+    const timer = { id: null as ReturnType<typeof setInterval> | null };
+
+    const stopPolling = () => {
+      stopped = true;
+      if (timer.id !== null) {
+        clearInterval(timer.id);
+        timer.id = null;
+      }
+    };
 
     const poll = async () => {
+      if (stopped) return;
       attempts++;
-      // Stop if review already loaded into store by this point
+
+      // Check store first — review may have been set by a previous tick
       const storeReview = useStore.getState().currentReview;
       if (storeReview && storeReview.status !== 'processing') {
-        clearInterval(intervalId);
+        stopPolling();
         return;
       }
 
@@ -373,7 +388,6 @@ export default function Dashboard() {
           r.repo_full_name === selectedRepo?.repo_full_name
         );
         if (match) {
-          // Call store actions — these trigger React re-render
           useStore.getState().setCurrentReview(match);
           if (match.original_code || match.reviewed_code) {
             useStore.getState().setCode(
@@ -381,27 +395,27 @@ export default function Dashboard() {
               match.reviewed_code || ''
             );
           }
-          // Stop polling only when review is done
           if (match.status !== 'processing') {
-            clearInterval(intervalId);
+            stopPolling();
+            return;
           }
         }
       } catch {}
 
-      if (attempts >= MAX_ATTEMPTS) clearInterval(intervalId);
+      if (attempts >= MAX_ATTEMPTS) stopPolling();
     };
 
-    // Fire immediately after short delay, then every 3s
-    const initial = setTimeout(() => {
+    // Start: first poll after 1.5s, then every 3s
+    const initialTimer = setTimeout(() => {
       poll();
-      intervalId = setInterval(poll, 3000);
+      timer.id = setInterval(poll, 3000);
     }, 1500);
 
     return () => {
-      clearTimeout(initial);
-      clearInterval(intervalId);
+      stopped = true;
+      clearTimeout(initialTimer);
+      if (timer.id !== null) clearInterval(timer.id);
     };
-  // Only re-run when PR changes or mode changes — NOT on currentReview change
   }, [selectedPR?.id, isAutoMode]);
 
   const closePR = () => {
