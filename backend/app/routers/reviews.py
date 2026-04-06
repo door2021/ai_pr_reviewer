@@ -123,9 +123,9 @@ def _save_debt_items(db, review, analysis):
             raw_type = getattr(issue, "debt_type", None) or "other"
             debt_type = raw_type if raw_type in VALID_DEBT_TYPES else "other"
 
-            # Skip low-noise issues with no real debt signal
-            if issue.severity == "low" and debt_type == "other":
-                continue
+            # # Skip low-noise issues with no real debt signal
+            # if issue.severity == "low" and debt_type == "other":
+            #     continue
 
             item = DebtItem(
                 user_id=review.user_id,
