@@ -346,10 +346,13 @@ export default function Sidebar() {
 
                           return (
                             <div key={repo.id}>
-                              {/* Repo Row */}
-                              <button
+                              {/* Repo Row — div not button to avoid nested button error */}
+                              <div
                                 onClick={() => handleRepoClick(repo)}
-                                className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-all ${
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={e => e.key === 'Enter' && handleRepoClick(repo)}
+                                className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-all cursor-pointer ${
                                   selectedRepo?.id === repo.id
                                     ? 'bg-primary/10 border border-primary/20'
                                     : 'hover:bg-surface border border-transparent'
@@ -365,7 +368,7 @@ export default function Sidebar() {
                                     {repo.repo_name}
                                   </span>
                                 )}
-                                {/* Per-repo sync button — the only refresh control */}
+                                {/* Per-repo sync button */}
                                 <button
                                   onClick={e => handleSyncRepo(repo.id, e)}
                                   className="p-0.5 hover:bg-primary/10 rounded flex-shrink-0 transition-colors"
@@ -374,7 +377,7 @@ export default function Sidebar() {
                                 >
                                   <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin text-primary' : 'text-text-muted hover:text-primary'}`} />
                                 </button>
-                              </button>
+                              </div>
 
                               {/* PRs */}
                               {isExpanded && (
