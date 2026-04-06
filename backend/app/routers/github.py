@@ -1131,6 +1131,68 @@ async def check_pr_status(
         raise HTTPException(status_code=500, detail=f"Failed to check PR status: {str(e)}")
 
 
+@router.post("/prs/{pr_id}/auto-review", response_model=MessageResponse)
+async def trigger_pr_auto_review(
+    pr_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Manually trigger an auto review for a PR.
+    Called by frontend when PR is opened in auto mode and no review exists yet.
+    """
+    pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
+        GitHubPR.id == pr_id,
+        GitHubAccount.user_id == current_user.id
+    ).first()
+
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+
+    if not pr.repo.github_account.is_token_valid:
+        raise HTTPException(status_code=401, detail="GitHub token expired")
+
+    # Check if review already exists
+    existing = db.query(Review).filter(
+        Review.pr_id == pr_id,
+        Review.user_id == current_user.id,
+    ).first()
+
+    if existing:
+        return {"message": f"Review already exists (status: {existing.status})", "success": True}
+
+    # Create review record
+    review = Review(
+        user_id=current_user.id,
+        github_account_id=pr.repo.github_account_id,
+        imported_repo_id=pr.repo_id,
+        pr_id=pr.id,
+        pr_url=f"https://github.com/{pr.repo.repo_full_name}/pull/{pr.pr_number}",
+        pr_number=pr.pr_number,
+        repo_full_name=pr.repo.repo_full_name,
+        branch_name=pr.head_ref,
+        target_branch=pr.base_ref,
+        pr_title=pr.title,
+        code_diff="",
+        original_code="",
+        status="processing",
+    )
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+
+    access_token = pr.repo.github_account.access_token
+    import threading
+    threading.Thread(
+        target=_run_auto_review,
+        args=(review.id, pr.repo.repo_full_name, pr.pr_number, access_token),
+        daemon=True
+    ).start()
+
+    print(f"[auto] Triggered review for PR #{pr.pr_number} via API (review_id={review.id})")
+    return {"message": "Auto review started", "success": True}
+
+
 @router.post("/prs/{pr_id}/comment", response_model=MessageResponse)
 async def add_pr_comment(
     pr_id: int,

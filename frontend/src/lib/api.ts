@@ -170,6 +170,12 @@ export const githubAPI = {
     return res.data; // { is_open: bool, state: string, mergeable: bool }
   },
 
+  // Trigger auto review for a PR
+  triggerAutoReview: async (prId: number) => {
+    const res = await api.post(`/github-import/prs/${prId}/auto-review`);
+    return res.data;
+  },
+
   // Comment on PR
   addPRComment: async (prId: number, content: string, lineNumber?: number) => {
     const res = await api.post(`/github-import/prs/${prId}/comment`, {
