@@ -29,6 +29,7 @@ export default function Setting() {
   // ── Profile settings ─────────────────────────────────────────
   const [fullName, setFullName]       = useState('');
   const [email, setEmail]             = useState('');
+  const [avatarUrl, setAvatarUrl]     = useState('');
   const [savingProfile, setSavingProfile]     = useState(false);
   const [profileSuccess, setProfileSuccess]   = useState('');
   const [profileError, setProfileError]       = useState('');
@@ -50,6 +51,7 @@ export default function Setting() {
       setThreshold(user.auto_merge_threshold ?? 85);
       setFullName(user.full_name || '');
       setEmail(user.email || '');
+      setAvatarUrl(user.avatar_url || '');
     }
   }, [user]);
 
@@ -73,7 +75,10 @@ export default function Setting() {
     e.preventDefault();
     setSavingProfile(true); setProfileError(''); setProfileSuccess('');
     try {
-      await usersAPI.updateProfile({ full_name: fullName });
+      await usersAPI.updateProfile({
+        full_name: fullName || undefined,
+        avatar_url: avatarUrl || undefined,
+      });
       await loadUserProfile();
       setProfileSuccess('Profile updated ✓');
       setTimeout(() => setProfileSuccess(''), 3000);
@@ -129,8 +134,8 @@ export default function Setting() {
 
         {/* Page header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
-            <Settings className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0">
+            <img src="/logo.png" alt="DeepReview" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-white">Settings</h1>
@@ -255,9 +260,14 @@ export default function Setting() {
               <form onSubmit={handleSaveProfile} className="space-y-4">
                 {/* Avatar preview */}
                 <div className="flex items-center gap-4 p-4 rounded-xl bg-background/50 border border-border">
-                  <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xl font-bold flex-shrink-0">
-                    {(fullName || user?.email || '?')[0].toUpperCase()}
-                  </div>
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Avatar" className="w-14 h-14 rounded-full object-cover flex-shrink-0 border border-border"
+                      onError={e => { e.currentTarget.style.display = 'none'; }} />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xl font-bold flex-shrink-0">
+                      {(fullName || user?.email || '?')[0].toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <p className="text-sm font-medium text-white">{fullName || 'No name set'}</p>
                     <p className="text-xs text-text-muted">{user?.email}</p>
@@ -281,11 +291,11 @@ export default function Setting() {
                   />
                 </div>
 
-                {/* Email — read-only, shown for reference */}
+                {/* Email — read-only */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-text flex items-center gap-2">
                     <Mail className="w-3.5 h-3.5 text-text-muted" /> Email
-                    <span className="text-xs text-text-muted font-normal">(cannot be changed here)</span>
+                    <span className="text-xs text-text-muted font-normal">(cannot be changed)</span>
                   </label>
                   <input
                     type="email"
@@ -293,6 +303,29 @@ export default function Setting() {
                     readOnly
                     className="w-full bg-background/30 border border-border/50 rounded-lg px-3 py-2.5 text-sm text-text-muted cursor-not-allowed"
                   />
+                </div>
+
+                {/* Avatar URL */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-text flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-text-muted" /> Avatar URL
+                    <span className="text-xs text-text-muted font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={avatarUrl}
+                    onChange={e => setAvatarUrl(e.target.value)}
+                    placeholder="https://example.com/avatar.jpg"
+                    className="w-full bg-background/70 border border-border rounded-lg px-3 py-2.5 text-sm text-text placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  />
+                  {avatarUrl && (
+                    <img
+                      src={avatarUrl}
+                      alt="Avatar preview"
+                      className="w-10 h-10 rounded-full object-cover border border-border mt-1"
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                    />
+                  )}
                 </div>
 
                 <Button type="submit" className="w-full gap-2" disabled={savingProfile}>
