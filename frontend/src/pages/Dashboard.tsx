@@ -348,34 +348,60 @@ export default function Dashboard() {
   useEffect(() => { setActiveTab('prs'); }, [selectedRepo?.id]);
 
   // ── Auto mode: poll for existing review when PR is opened ──────
+  // Uses selectedPR.id only in deps — NOT currentReview — to avoid
+  // effect re-running and cancelling interval when review is found
   useEffect(() => {
-    if (!selectedPR || !isAutoMode || currentReview) return;
+    if (!selectedPR || !isAutoMode) return;
 
-    // Poll every 2s until review is found or completed
-    const interval = setInterval(async () => {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 20;
+    let intervalId: ReturnType<typeof setInterval>;
+
+    const poll = async () => {
+      attempts++;
+      // Stop if review already loaded into store by this point
+      const storeReview = useStore.getState().currentReview;
+      if (storeReview && storeReview.status !== 'processing') {
+        clearInterval(intervalId);
+        return;
+      }
+
       try {
         const reviews = await reviewsAPI.getAll();
         const match = reviews.find((r: any) =>
-          r.pr_id === selectedPR.id || r.pr_number === selectedPR.pr_number
+          r.pr_number === selectedPR.pr_number &&
+          r.repo_full_name === selectedRepo?.repo_full_name
         );
         if (match) {
-          // Found a review — load it into store
-          const { setCurrentReview, setCode } = useStore.getState();
-          setCurrentReview(match);
+          // Call store actions — these trigger React re-render
+          useStore.getState().setCurrentReview(match);
           if (match.original_code || match.reviewed_code) {
-            setCode(match.original_code || '', match.reviewed_code || '');
+            useStore.getState().setCode(
+              match.original_code || '',
+              match.reviewed_code || ''
+            );
           }
+          // Stop polling only when review is done
           if (match.status !== 'processing') {
-            clearInterval(interval);
+            clearInterval(intervalId);
           }
         }
       } catch {}
-    }, 2000);
 
-    // Stop polling after 60s
-    const timeout = setTimeout(() => clearInterval(interval), 60000);
+      if (attempts >= MAX_ATTEMPTS) clearInterval(intervalId);
+    };
 
-    return () => { clearInterval(interval); clearTimeout(timeout); };
+    // Fire immediately after short delay, then every 3s
+    const initial = setTimeout(() => {
+      poll();
+      intervalId = setInterval(poll, 3000);
+    }, 1500);
+
+    return () => {
+      clearTimeout(initial);
+      clearInterval(intervalId);
+    };
+  // Only re-run when PR changes or mode changes — NOT on currentReview change
   }, [selectedPR?.id, isAutoMode]);
 
   const closePR = () => {
@@ -433,7 +459,9 @@ export default function Dashboard() {
             <h1 className="font-semibold text-white truncate">
               {selectedPR
                 ? `${selectedRepo?.repo_full_name} / PR #${selectedPR.pr_number} — ${selectedPR.title}`
-                : 'DeepReviewAI'}
+                : selectedRepo
+                ? selectedRepo.repo_full_name
+                : 'Select a repository'}
             </h1>
             {selectedPR && (
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium border flex-shrink-0 ${
@@ -495,8 +523,8 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-medium">
-                      <Zap className="w-3.5 h-3.5" />
-                      Waiting for sync…
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Auto-reviewing…
                     </div>
                   )
                 ) : (
@@ -517,7 +545,7 @@ export default function Dashboard() {
                   </Button>
                 )}
 
-                {/* Approve — becomes a static badge once clicked */}
+                {/* Approve — always visible, becomes badge once clicked */}
                 {prApproved ? (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium select-none">
                     <CheckCircle className="w-3.5 h-3.5" />
@@ -525,7 +553,9 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <Button variant="outline" size="sm" className="gap-2"
-                    onClick={handleApprove} disabled={isApproving}>
+                    onClick={handleApprove}
+                    disabled={isApproving}
+                    title={isAutoMode && !currentReview ? 'Review in progress — you can still approve' : ''}>
                     {isApproving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
                     Approve
                   </Button>
@@ -710,10 +740,10 @@ export default function Dashboard() {
             {/* ── Changed files ── */}
             <div className="flex-1 overflow-y-auto px-6 pt-3 pb-2 min-h-0">
 
-              {/* AI Review Results panel — shown when review exists */}
-              {currentReview && (
+              {/* AI Review Results panel — shown when review exists OR auto mode is active */}
+              {(currentReview || isAutoMode) && (
                 <div className={`mb-4 rounded-xl border overflow-hidden ${
-                  currentReview.status === 'processing'
+                  !currentReview || currentReview.status === 'processing'
                     ? 'border-yellow-500/20 bg-yellow-500/5'
                     : currentReview.status === 'failed'
                     ? 'border-red-500/20 bg-red-500/5'
@@ -721,7 +751,7 @@ export default function Dashboard() {
                 }`}>
                   {/* Panel header */}
                   <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
-                    {currentReview.status === 'processing' ? (
+                    {!currentReview || currentReview.status === 'processing' ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin text-yellow-400 flex-shrink-0" />
                         <span className="text-sm font-medium text-yellow-400">AI is reviewing your code…</span>
@@ -766,7 +796,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Panel body — only shown when completed */}
-                  {currentReview.status !== 'processing' && currentReview.ai_feedback && (
+                  {currentReview && currentReview.status !== 'processing' && currentReview.ai_feedback && (
                     <div className="px-4 py-3 space-y-3">
                       {/* Summary */}
                       {currentReview.ai_feedback.summary && (

@@ -647,6 +647,49 @@ def sync_repo_prs(repo_id: int, access_token: str):
                 existing.base_ref = pr_data["base"]["ref"]
                 existing.is_active = True
                 existing.last_synced_at = datetime.utcnow()
+
+                # ── Auto-review for existing PRs too ──────────────────
+                # Triggers if user is in auto mode AND no review exists yet
+                try:
+                    account = repo.github_account
+                    if account:
+                        user = db.query(User).filter(User.id == account.user_id).first()
+                        if user and user.review_mode == "automatic":
+                            from app.models import Review as ReviewModel
+                            existing_review = db.query(ReviewModel).filter(
+                                ReviewModel.pr_id == existing.id,
+                                ReviewModel.user_id == user.id,
+                            ).first()
+                            if not existing_review:
+                                review = ReviewModel(
+                                    user_id=user.id,
+                                    github_account_id=account.id,
+                                    imported_repo_id=repo_id,
+                                    pr_id=existing.id,
+                                    pr_url=f"https://github.com/{repo.repo_full_name}/pull/{existing.pr_number}",
+                                    pr_number=existing.pr_number,
+                                    repo_full_name=repo.repo_full_name,
+                                    branch_name=existing.head_ref,
+                                    target_branch=existing.base_ref,
+                                    pr_title=existing.title,
+                                    code_diff="",
+                                    original_code="",
+                                    status="processing",
+                                )
+                                db.add(review)
+                                db.commit()  # commit first so thread can find it
+                                db.refresh(review)
+                                review_id_to_run = review.id
+                                import threading
+                                threading.Thread(
+                                    target=_run_auto_review,
+                                    args=(review_id_to_run, repo.repo_full_name, existing.pr_number, access_token),
+                                    daemon=True
+                                ).start()
+                                print(f"[auto] Triggered review for existing PR #{existing.pr_number} (review_id={review_id_to_run})")
+                except Exception as auto_err:
+                    print(f"[auto] Failed to trigger auto review for existing PR: {auto_err}")
+
             else:
                 new_pr = GitHubPR(
                     repo_id=repo_id,
@@ -702,15 +745,16 @@ def sync_repo_prs(repo_id: int, access_token: str):
                                     status="processing",
                                 )
                                 db.add(review)
-                                db.flush()
-                                # Fetch diff and run AI review in a thread
+                                db.commit()  # commit first so thread can find it
+                                db.refresh(review)
+                                review_id_to_run = review.id
                                 import threading
                                 threading.Thread(
                                     target=_run_auto_review,
-                                    args=(review.id, repo.repo_full_name, new_pr.pr_number, access_token),
+                                    args=(review_id_to_run, repo.repo_full_name, new_pr.pr_number, access_token),
                                     daemon=True
                                 ).start()
-                                print(f"[auto] Triggered review for PR #{new_pr.pr_number} in {repo.repo_full_name}")
+                                print(f"[auto] Triggered review for new PR #{new_pr.pr_number} (review_id={review_id_to_run})")
                 except Exception as auto_err:
                     print(f"[auto] Failed to trigger auto review: {auto_err}")
 
@@ -862,6 +906,49 @@ async def get_repo_prs(
                         existing.last_synced_at = datetime.utcnow()
                         existing.updated_at_github = parse_dt(pr_data.get("updated_at"))
                         print(f"[pulls] Updated PR #{pr_data['number']}")
+
+                        # ── Auto-review trigger for existing PRs ──────
+                        try:
+                            user = db.query(User).filter(User.id == current_user.id).first()
+                            print(f"[auto] Checking auto-review: user={user.email if user else None}, mode={user.review_mode if user else None}")
+                            if user and user.review_mode == "automatic":
+                                existing_review = db.query(Review).filter(
+                                    Review.pr_id == existing.id,
+                                    Review.user_id == user.id,
+                                ).first()
+                                print(f"[auto] existing_review={existing_review}")
+                                if not existing_review:
+                                    rev = Review(
+                                        user_id=user.id,
+                                        github_account_id=repo.github_account_id,
+                                        imported_repo_id=repo_id,
+                                        pr_id=existing.id,
+                                        pr_url=f"https://github.com/{repo.repo_full_name}/pull/{existing.pr_number}",
+                                        pr_number=existing.pr_number,
+                                        repo_full_name=repo.repo_full_name,
+                                        branch_name=existing.head_ref,
+                                        target_branch=existing.base_ref,
+                                        pr_title=existing.title,
+                                        code_diff="",
+                                        original_code="",
+                                        status="processing",
+                                    )
+                                    db.add(rev)
+                                    db.commit()
+                                    db.refresh(rev)
+                                    import threading
+                                    threading.Thread(
+                                        target=_run_auto_review,
+                                        args=(rev.id, repo.repo_full_name, existing.pr_number, access_token),
+                                        daemon=True
+                                    ).start()
+                                    print(f"[auto] Triggered review for PR #{existing.pr_number} (review_id={rev.id})")
+                                else:
+                                    print(f"[auto] Review already exists for PR #{existing.pr_number} (status={existing_review.status})")
+                        except Exception as auto_err:
+                            import traceback
+                            print(f"[auto] Failed to trigger auto review: {traceback.format_exc()}")
+
                     else:
                         new_pr = GitHubPR(
                             repo_id=repo_id,
