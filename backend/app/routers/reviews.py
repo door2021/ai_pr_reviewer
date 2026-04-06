@@ -112,7 +112,13 @@ VALID_DEBT_TYPES = {
 
 def _save_debt_items(db, review, analysis):
     """Extract debt items from review issues and persist them."""
+    # Skip entirely if we have no repo to attach debt to
+    if not review.imported_repo_id:
+        print(f"[debt] skipping — review {review.id} has no imported_repo_id")
+        return
+
     try:
+        saved = 0
         for issue in analysis.issues:
             raw_type = getattr(issue, "debt_type", None) or "other"
             debt_type = raw_type if raw_type in VALID_DEBT_TYPES else "other"
@@ -123,11 +129,11 @@ def _save_debt_items(db, review, analysis):
 
             item = DebtItem(
                 user_id=review.user_id,
-                repo_id=review.imported_repo_id or 0,
+                repo_id=review.imported_repo_id,
                 pr_id=review.pr_id,
                 pr_number=review.pr_number,
                 review_id=review.id,
-                file_path=None,           # file_path added in future when we have per-file diffs
+                file_path=None,
                 debt_type=debt_type,
                 severity=issue.severity,
                 description=issue.message,
@@ -135,9 +141,13 @@ def _save_debt_items(db, review, analysis):
                 is_resolved=False,
             )
             db.add(item)
+            saved += 1
         db.commit()
+        print(f"[debt] saved {saved} debt items for review {review.id} (repo {review.imported_repo_id})")
     except Exception as e:
         print(f"[debt] failed to save debt items for review {review.id}: {e}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
 
 
