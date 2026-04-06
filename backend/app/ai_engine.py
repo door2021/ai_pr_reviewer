@@ -144,6 +144,74 @@ async def _generate(system: str, user: str) -> str:
     raise RuntimeError("AI service is not configured. Contact support.")
 
 
+# Sync provider calls for background threads
+
+def _call_openrouter_sync(system: str, user: str) -> str:
+    if not settings.OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://deepreview.app",
+            "X-Title": "DeepReview",
+        },
+    )
+    response = client.chat.completions.create(
+        model=settings.OPENROUTER_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.2,
+        max_tokens=4096,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _call_groq_sync(system: str, user: str) -> str:
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY not set")
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=settings.GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
+    )
+    response = client.chat.completions.create(
+        model=settings.GROQ_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.2,
+        max_tokens=4096,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _generate_sync(system: str, user: str) -> str:
+    """Sync version of _generate. Safe to call from background threads."""
+    if settings.OPENROUTER_API_KEY:
+        try:
+            result = _call_openrouter_sync(system, user)
+            print("[ai] OpenRouter OK (sync)")
+            return result
+        except Exception as e:
+            print(f"[ai] OpenRouter failed (sync): {e} -- trying Groq")
+
+    if settings.GROQ_API_KEY:
+        try:
+            result = _call_groq_sync(system, user)
+            print("[ai] Groq OK (sync)")
+            return result
+        except Exception as e:
+            print(f"[ai] Groq failed (sync): {e}")
+            raise
+
+    raise RuntimeError("AI service is not configured. Contact support.")
+
+
 # ── JSON parsing ──────────────────────────────────────────────────────────────
 
 def _parse_json(text: str) -> dict:
@@ -247,6 +315,50 @@ class AIEngine:
         except Exception as e:
             print(f"[ai] chat_with_code error: {e}")
             return "Something went wrong. Please try again."
+
+    def analyze_code_sync(
+        self,
+        code_diff: str,
+        original_code: str,
+        repo_name: str = "",
+        branch_name: str = "",
+    ) -> "AIAnalysis":
+        """
+        Fully synchronous version of analyze_code.
+        Safe to call from background threads without any event loop.
+        """
+        if not code_diff and not original_code:
+            return self._empty_analysis("No code provided for review.")
+
+        user_prompt = (
+            f"REPO: {repo_name}\nBRANCH: {branch_name}\n\n"
+            f"CODE DIFF:\n{code_diff[:12000]}\n\n"
+            f"ORIGINAL CODE:\n{original_code[:6000]}"
+        )
+
+        raw = ""
+        try:
+            raw = _generate_sync(REVIEW_SYSTEM_PROMPT, user_prompt)
+            data = _parse_json(raw)
+            issues = []
+            for i in data.get("issues", []):
+                issues.append(FeedbackItem(
+                    severity=i.get("severity", "medium"),
+                    message=i.get("message", ""),
+                    line_number=i.get("line_number"),
+                    suggestion=i.get("suggestion"),
+                    debt_type=i.get("debt_type"),
+                ))
+            return AIAnalysis(
+                summary=data.get("summary", ""),
+                issues=issues,
+                suggestions=data.get("suggestions", []),
+                safety_score=max(0, min(100, int(data.get("safety_score", 50)))),
+                ready_for_merge=bool(data.get("ready_for_merge", False)),
+            )
+        except Exception as e:
+            print(f"[ai] analyze_code_sync error: {e}")
+            return self._error_analysis("general_error")
 
     @staticmethod
     def _empty_analysis(reason: str) -> AIAnalysis:
