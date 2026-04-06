@@ -347,13 +347,19 @@ export default function Dashboard() {
   useEffect(() => { setSuccessMsg(''); setComment(''); setShowDescModal(false); setZeroNoise(false); }, [selectedPR?.id]);
   useEffect(() => { setActiveTab('prs'); }, [selectedRepo?.id]);
 
-  // ── Auto mode: poll for existing review when PR is opened ──────
+  // ── Auto mode: trigger + poll for review when PR is opened ──────
   useEffect(() => {
     if (!selectedPR || !isAutoMode) return;
 
     // If review already exists and is completed — no need to poll
     const existing = useStore.getState().currentReview;
     if (existing && existing.status !== 'processing') return;
+
+    // Trigger auto review immediately via API
+    // This creates the review record and starts the background thread
+    githubAPI.triggerAutoReview(selectedPR.id).catch(() => {
+      // Silently ignore — review may already exist
+    });
 
     let stopped = false;
     let attempts = 0;
