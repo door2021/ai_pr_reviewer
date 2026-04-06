@@ -527,14 +527,12 @@ def _run_auto_review(review_id: int, repo_full_name: str, pr_number: int, access
         db.commit()
 
         # Run AI analysis
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            analysis = loop.run_until_complete(
-                ai_engine.analyze_code(diff, diff, repo_full_name, review.branch_name or "")
-            )
-        finally:
-            loop.close()
+        # Use asyncio.run() — creates a fresh event loop, runs coroutine,
+        # then properly cleans up all async resources before closing.
+        # Avoids "Event loop is closed" from httpx async client cleanup.
+        analysis = asyncio.run(
+            ai_engine.analyze_code(diff, diff, repo_full_name, review.branch_name or "")
+        )
 
         review.ai_feedback = analysis.dict()
         review.safety_score = analysis.safety_score
