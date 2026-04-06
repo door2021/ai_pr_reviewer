@@ -431,7 +431,7 @@ export default function Sidebar() {
         <div className="border-t border-border p-2 space-y-0.5 flex-shrink-0">
           {[
             { icon: <Settings className="w-4 h-4" />, label: 'Settings', action: () => navigate('/settings') },
-            { icon: <User className="w-4 h-4" />, label: user?.full_name || user?.email || 'Profile', action: () => navigate('/profile') },
+            { icon: <User className="w-4 h-4" />, label: user?.full_name || user?.email || 'Profile', action: () => navigate('/settings') },
             { icon: <LogOut className="w-4 h-4" />, label: 'Sign out', action: async () => { await logout(); navigate('/login'); }, danger: true },
           ].map(({ icon, label, action, danger }) => (
             <button
