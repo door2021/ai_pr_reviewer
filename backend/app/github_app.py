@@ -1,18 +1,3 @@
-"""
-GitHub App Authentication Layer
-
-Handles:
-  - JWT generation (signed with app private key)
-  - Installation access token (short-lived, per-repo token)
-  - Token caching (tokens last 1hr, we cache for 55min)
-  - Webhook signature verification
-
-Auth flow:
-  Your private key → JWT (10min) → Installation token (1hr) → API calls
-
-Never use PAT tokens for GitHub App operations — always use installation tokens.
-"""
-
 import jwt as pyjwt
 import time
 import httpx
@@ -22,22 +7,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional
 from app.config import settings
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# In-memory token cache: { installation_id: (token, expires_at) }
-# ─────────────────────────────────────────────────────────────────────────────
 _token_cache: Dict[int, tuple] = {}
 
 
 def generate_jwt() -> str:
-    """
-    Generate a short-lived JWT signed with the GitHub App private key.
-    Valid for 10 minutes — used only to get installation tokens.
-
-    Requires in .env:
-      GITHUB_APP_ID=123456
-      GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\\n...\\n-----END RSA PRIVATE KEY-----"
-    """
     if not settings.GITHUB_APP_ID or not settings.GITHUB_APP_PRIVATE_KEY:
         raise ValueError("GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY must be set in .env")
 
@@ -54,12 +27,6 @@ def generate_jwt() -> str:
 
 
 async def get_installation_token(installation_id: int) -> str:
-    """
-    Get a valid installation access token for a given installation.
-    Tokens last 1 hour — we cache for 55 minutes to avoid edge cases.
-
-    This is what you use to call the GitHub API on behalf of an installation.
-    """
     # Check cache first
     if installation_id in _token_cache:
         token, expires_at = _token_cache[installation_id]
@@ -90,7 +57,6 @@ async def get_installation_token(installation_id: int) -> str:
 
 
 async def get_app_installations() -> list:
-    """List all installations of this GitHub App (which orgs/users installed it)"""
     jwt_token = generate_jwt()
 
     async with httpx.AsyncClient() as client:
@@ -107,7 +73,6 @@ async def get_app_installations() -> list:
 
 
 async def get_installation_repos(installation_id: int) -> list:
-    """Get all repos accessible to a specific installation"""
     token = await get_installation_token(installation_id)
 
     async with httpx.AsyncClient() as client:
@@ -125,12 +90,6 @@ async def get_installation_repos(installation_id: int) -> list:
 
 
 def verify_webhook_signature(payload_bytes: bytes, signature_header: str) -> bool:
-    """
-    Verify the X-Hub-Signature-256 header that GitHub sends with every webhook.
-    Always verify — never skip this in production.
-
-    signature_header format: "sha256=abc123..."
-    """
     if not settings.GITHUB_WEBHOOK_SECRET:
         return False  # fail closed
 

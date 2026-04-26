@@ -31,7 +31,6 @@ async def update_current_user_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update profile — full name and avatar only (email change requires re-auth)"""
     if user_data.full_name is not None:
         current_user.full_name = user_data.full_name
 
@@ -49,7 +48,6 @@ async def update_user_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update review mode and auto-merge threshold"""
     if settings_data.review_mode is not None:
         if settings_data.review_mode not in ["manual", "automatic"]:
             raise HTTPException(status_code=400, detail="Invalid review mode. Must be 'manual' or 'automatic'")
@@ -71,7 +69,6 @@ async def change_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Change password — requires current password for verification"""
     # Verify current password
     if not pwd_context.verify(request.current_password, current_user.hashed_password):
         raise HTTPException(
@@ -95,7 +92,6 @@ async def deactivate_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Deactivate account (soft delete)"""
     current_user.is_active = False
     db.commit()
     return {"message": "Account deactivated", "success": True}

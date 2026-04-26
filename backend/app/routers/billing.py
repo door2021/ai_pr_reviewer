@@ -1,22 +1,3 @@
-"""
-Stripe Billing Router — subscriptions, webhooks, portal
-
-Endpoints:
-  POST /billing/create-checkout   → start a Stripe Checkout session
-  POST /billing/create-portal     → open customer billing portal (manage/cancel)
-  GET  /billing/subscription      → get current subscription status
-  POST /billing/webhook           → Stripe webhook handler (no auth)
-
-Plans (defined in .env via STRIPE_PRICE_*):
-  free   → $0  — 10 reviews/month, 1 repo
-  solo   → $9  — unlimited reviews, 5 repos
-  team   → $29 — team features, Slack, trends
-  pro    → $59 — security mode, multi-model, unlimited
-
-Usage:
-  pip install stripe
-"""
-
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.orm import Session
@@ -32,11 +13,6 @@ router = APIRouter(prefix="/billing", tags=["Billing"])
 
 # Configure Stripe
 stripe.api_key = settings.STRIPE_SECRET_KEY
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Plan definitions — maps plan name → Stripe Price ID from .env
-# ─────────────────────────────────────────────────────────────────────────────
 
 PLANS = {
     "solo": {
@@ -78,11 +54,6 @@ PLANS = {
     },
 }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Schemas
-# ─────────────────────────────────────────────────────────────────────────────
-
 class CheckoutRequest(BaseModel):
     plan: str          # "solo" | "team" | "pro"
     success_url: str   # where to redirect after successful payment
@@ -92,13 +63,7 @@ class CheckoutRequest(BaseModel):
 class PortalRequest(BaseModel):
     return_url: str    # where to return after managing subscription
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper: get or create Stripe customer for a user
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _get_or_create_customer(user: User, db: Session) -> str:
-    """Return existing Stripe customer ID or create a new one."""
     if user.stripe_customer_id:
         return user.stripe_customer_id
 
@@ -111,14 +76,8 @@ def _get_or_create_customer(user: User, db: Session) -> str:
     db.commit()
     return customer.id
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Endpoints
-# ─────────────────────────────────────────────────────────────────────────────
-
 @router.get("/plans")
 async def get_plans():
-    """Return all available subscription plans (public)"""
     return {
         "free": {
             "name": "Free",
@@ -139,7 +98,6 @@ async def get_subscription(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get current user's subscription status"""
     if not current_user.stripe_customer_id:
         return {
             "plan": "free",
@@ -187,10 +145,7 @@ async def create_checkout_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Create a Stripe Checkout session for a subscription.
-    Returns { checkout_url } — redirect the user there.
-    """
+
     plan = request.plan.lower()
     if plan not in PLANS:
         raise HTTPException(status_code=400, detail=f"Invalid plan '{plan}'. Choose: solo, team, pro")
@@ -234,11 +189,7 @@ async def create_billing_portal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Create a Stripe Customer Portal session.
-    User can update card, cancel, or change plan from there.
-    Returns { portal_url }
-    """
+
     if not current_user.stripe_customer_id:
         raise HTTPException(status_code=400, detail="No active subscription found")
 
@@ -258,11 +209,7 @@ async def stripe_webhook(
     stripe_signature: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    """
-    Stripe webhook — handles subscription lifecycle events.
-    No JWT auth — Stripe calls this directly.
-    Verified via Stripe-Signature header.
-    """
+
     if not settings.STRIPE_WEBHOOK_SECRET:
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
@@ -280,7 +227,6 @@ async def stripe_webhook(
     event_type = event["type"]
     print(f"[billing] Stripe event: {event_type}")
 
-    # ── Subscription activated / renewed ─────────────────────────────────────
     if event_type in ("customer.subscription.created", "customer.subscription.updated"):
         sub = event["data"]["object"]
         customer_id = sub["customer"]
@@ -296,7 +242,6 @@ async def stripe_webhook(
             db.commit()
             print(f"[billing] User {user.id} → plan={plan}, status={status}")
 
-    # ── Subscription cancelled / expired ─────────────────────────────────────
     elif event_type == "customer.subscription.deleted":
         sub = event["data"]["object"]
         customer_id = sub["customer"]
@@ -309,7 +254,6 @@ async def stripe_webhook(
             db.commit()
             print(f"[billing] User {user.id} subscription cancelled → free plan")
 
-    # ── Payment failed ────────────────────────────────────────────────────────
     elif event_type == "invoice.payment_failed":
         invoice = event["data"]["object"]
         customer_id = invoice["customer"]
@@ -319,7 +263,6 @@ async def stripe_webhook(
             db.commit()
             print(f"[billing] Payment failed for user {user.id}")
 
-    # ── Checkout completed ────────────────────────────────────────────────────
     elif event_type == "checkout.session.completed":
         session_obj = event["data"]["object"]
         user_id = session_obj.get("metadata", {}).get("user_id")
@@ -337,13 +280,7 @@ async def stripe_webhook(
 
     return {"received": True}
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _price_id_to_plan(price_id: str) -> str:
-    """Reverse-lookup plan name from Stripe Price ID."""
     for plan_name, plan_data in PLANS.items():
         if plan_data["price_id"] == price_id:
             return plan_name

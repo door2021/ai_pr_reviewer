@@ -2,7 +2,6 @@ from typing import Optional, Tuple
 import re
 
 def parse_github_pr_url(url: str) -> Tuple[Optional[str], Optional[int]]:
-    """Parse GitHub PR URL to extract repo name and PR number"""
     pattern = r"github\.com/([^/]+/[^/]+)/pull/(\d+)"
     match = re.search(pattern, url)
     if match:

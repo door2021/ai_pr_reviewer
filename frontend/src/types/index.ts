@@ -1,7 +1,3 @@
-// ===========================================
-// USER TYPES
-// ===========================================
-
 export interface User {
   id: number;
   email: string;
@@ -13,10 +9,6 @@ export interface User {
   created_at: string;
 }
 
-// ===========================================
-// GITHUB ACCOUNT TYPES
-// ===========================================
-
 export interface GitHubAccount {
   id: number;
   github_username: string;
@@ -26,10 +18,6 @@ export interface GitHubAccount {
   is_token_valid: boolean;
   connected_at: string;
 }
-
-// ===========================================
-// REPO TYPES
-// ===========================================
 
 export interface GitHubRepoListItem {
   id: number;
@@ -55,10 +43,6 @@ export interface GitHubRepo {
   github_account_id?: number;
 }
 
-// ===========================================
-// PR TYPES
-// ===========================================
-
 export interface GitHubPR {
   id: number;
   pr_number: number;
@@ -76,10 +60,6 @@ export interface GitHubPR {
   deletions: number;
   repo_id?: number;
 }
-
-// ===========================================
-// REVIEW TYPES
-// ===========================================
 
 export interface FeedbackItem {
   severity: 'high' | 'medium' | 'low';
@@ -118,10 +98,6 @@ export interface Review {
   pr_id?: number;
 }
 
-// ===========================================
-// COMMENT TYPES
-// ===========================================
-
 export interface UserComment {
   id: string;
   content: string;
@@ -129,10 +105,6 @@ export interface UserComment {
   created_at: string;
   author: string;
 }
-
-// ===========================================
-// UI STATE TYPES
-// ===========================================
 
 export interface SidebarAccount {
   id: number;

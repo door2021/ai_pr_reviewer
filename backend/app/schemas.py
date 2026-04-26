@@ -4,10 +4,6 @@ from datetime import datetime
 from enum import Enum
 
 
-# ===========================================
-# ENUMS
-# ===========================================
-
 class ReviewStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -23,10 +19,6 @@ class MergeMethod(str, Enum):
     SQUASH = "squash"
     REBASE = "rebase"
 
-
-# ===========================================
-# AUTH SCHEMAS
-# ===========================================
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -56,10 +48,6 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
-# ===========================================
-# USER SCHEMAS
-# ===========================================
-
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
@@ -84,10 +72,6 @@ class UserSettingsUpdate(BaseModel):
     auto_merge_threshold: Optional[int] = None
 
 
-# ===========================================
-# GITHUB ACCOUNT SCHEMAS
-# ===========================================
-
 class GitHubAccountCreate(BaseModel):
     access_token: str
     account_label: Optional[str] = None
@@ -104,10 +88,6 @@ class GitHubAccountResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-# ===========================================
-# GITHUB REPO SCHEMAS
-# ===========================================
 
 class GitHubRepoListItem(BaseModel):
     id: int
@@ -140,10 +120,6 @@ class GitHubRepoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ===========================================
-# GITHUB PR SCHEMAS
-# ===========================================
-
 class GitHubPRDetail(BaseModel):
     id: int
     pr_number: int
@@ -163,10 +139,6 @@ class GitHubPRDetail(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-# ===========================================
-# REVIEW SCHEMAS
-# ===========================================
 
 class FeedbackItem(BaseModel):
     severity: str
@@ -246,10 +218,6 @@ class UserCommentCreate(BaseModel):
     line_number: Optional[int] = None
 
 
-# ===========================================
-# PR MANAGEMENT SCHEMAS
-# ===========================================
-
 class PRMergeRequest(BaseModel):
     merge_method: MergeMethod = MergeMethod.SQUASH
     commit_title: Optional[str] = None
@@ -270,10 +238,6 @@ class MergeDecision(BaseModel):
     required_actions: List[str] = []
 
 
-# ===========================================
-# CHAT MESSAGE SCHEMAS
-# ===========================================
-
 class ChatMessageCreate(BaseModel):
     review_id: int
     content: str
@@ -289,10 +253,6 @@ class ChatMessageResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-# ===========================================
-# RESPONSE WRAPPERS
-# ===========================================
 
 class MessageResponse(BaseModel):
     message: str

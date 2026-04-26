@@ -1,20 +1,3 @@
-"""
-AI Engine — OpenRouter primary + Groq fallback.
-
-Both are FREE with no credit card required:
-
-  OpenRouter → https://openrouter.ai  (sign up, get API key, 50 req/day free)
-    Free models: meta-llama/llama-3.3-70b-instruct:free
-                 deepseek/deepseek-r1:free
-                 qwen/qwen3-coder-480b-instruct:free
-
-  Groq → https://console.groq.com  (14,400 req/day free, just email signup)
-    Free model: llama-3.3-70b-versatile
-
-Install:
-  pip install openai   ← covers both providers (OpenAI-compatible APIs)
-"""
-
 import json
 import asyncio
 from typing import Optional
@@ -123,7 +106,6 @@ async def _call_groq(system: str, user: str) -> str:
 
 
 async def _generate(system: str, user: str) -> str:
-    """Try OpenRouter first, auto-fallback to Groq on any error."""
     if settings.OPENROUTER_API_KEY:
         try:
             result = await _call_openrouter(system, user)
@@ -191,7 +173,6 @@ def _call_groq_sync(system: str, user: str) -> str:
 
 
 def _generate_sync(system: str, user: str) -> str:
-    """Sync version of _generate. Safe to call from background threads."""
     if settings.OPENROUTER_API_KEY:
         try:
             result = _call_openrouter_sync(system, user)
@@ -212,8 +193,6 @@ def _generate_sync(system: str, user: str) -> str:
     raise RuntimeError("AI service is not configured. Contact support.")
 
 
-# ── JSON parsing ──────────────────────────────────────────────────────────────
-
 def _parse_json(text: str) -> dict:
     cleaned = text.strip()
     if "```" in cleaned:
@@ -225,8 +204,6 @@ def _parse_json(text: str) -> dict:
         cleaned = cleaned[start:end]
     return json.loads(cleaned)
 
-
-# ── Public API ────────────────────────────────────────────────────────────────
 
 class AIEngine:
 
@@ -323,10 +300,6 @@ class AIEngine:
         repo_name: str = "",
         branch_name: str = "",
     ) -> "AIAnalysis":
-        """
-        Fully synchronous version of analyze_code.
-        Safe to call from background threads without any event loop.
-        """
         if not code_diff and not original_code:
             return self._empty_analysis("No code provided for review.")
 

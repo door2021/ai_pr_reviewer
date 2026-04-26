@@ -21,18 +21,12 @@ from app.github_client import get_github_client
 
 router = APIRouter(prefix="/github-import", tags=["GitHub Import"])
 
-
-# ==========================================================
-# ACCOUNT ENDPOINTS
-# ==========================================================
-
 @router.post("/connect-account", response_model=GitHubAccountResponse)
 async def connect_github_account(
     request: GitHubAccountCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Connect GitHub account with PAT"""
     try:
         client = get_github_client(request.access_token)
         user_info = await client.get_user()
@@ -79,7 +73,6 @@ async def get_connected_accounts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all connected GitHub accounts"""
     accounts = db.query(GitHubAccount).filter(
         GitHubAccount.user_id == current_user.id,
         GitHubAccount.is_active == True
@@ -93,7 +86,6 @@ async def disconnect_github_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Disconnect a GitHub account"""
     account = db.query(GitHubAccount).filter(
         GitHubAccount.id == account_id,
         GitHubAccount.user_id == current_user.id
@@ -113,7 +105,6 @@ async def validate_account_token(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Check if the stored token for an account is still valid by calling GitHub API"""
     account = db.query(GitHubAccount).filter(
         GitHubAccount.id == account_id,
         GitHubAccount.user_id == current_user.id,
@@ -145,7 +136,6 @@ async def reconnect_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update the access token for an existing account (re-auth after expiry)"""
     account = db.query(GitHubAccount).filter(
         GitHubAccount.id == account_id,
         GitHubAccount.user_id == current_user.id,
@@ -184,7 +174,6 @@ async def get_available_repos_for_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Fetch repos from GitHub for a given account (for import modal)"""
     account = db.query(GitHubAccount).filter(
         GitHubAccount.id == account_id,
         GitHubAccount.user_id == current_user.id,
@@ -231,7 +220,6 @@ async def sync_account_repos(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Sync all imported repos for a given account (refresh PRs)"""
     account = db.query(GitHubAccount).filter(
         GitHubAccount.id == account_id,
         GitHubAccount.user_id == current_user.id,
@@ -258,10 +246,6 @@ async def sync_account_repos(
     return {"message": f"Synced {len(repos)} repos for @{account.github_username}", "success": True}
 
 
-# ==========================================================
-# REPO IMPORT ENDPOINTS
-# ==========================================================
-
 @router.post("/import-repos", response_model=RepoImportResponse)
 async def import_repos(
     request: GitHubRepoImportRequest,
@@ -269,7 +253,6 @@ async def import_repos(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Import selected repos from a GitHub account"""
     account = db.query(GitHubAccount).filter(
         GitHubAccount.id == request.github_account_id,
         GitHubAccount.user_id == current_user.id,
@@ -347,7 +330,6 @@ async def get_imported_repos(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all imported repos for user (all accounts)"""
     repos = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubAccount.user_id == current_user.id,
         GitHubRepoImport.is_active == True
@@ -361,7 +343,6 @@ async def get_account_repos(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get imported repos for a specific account"""
     repos = db.query(GitHubRepoImport).filter(
         GitHubRepoImport.github_account_id == account_id,
         GitHubRepoImport.is_active == True
@@ -375,7 +356,6 @@ async def remove_imported_repo(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Remove an imported repo"""
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubRepoImport.id == repo_id,
         GitHubAccount.user_id == current_user.id,
@@ -390,17 +370,12 @@ async def remove_imported_repo(
     return {"message": "Repo removed from imports", "success": True}
 
 
-# ==========================================================
-# REPO SYNC
-# ==========================================================
-
 @router.post("/repos/{repo_id}/sync", response_model=MessageResponse)
 async def sync_repo(
     repo_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Force sync PRs for a repo from GitHub"""
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubRepoImport.id == repo_id,
         GitHubAccount.user_id == current_user.id,
@@ -416,7 +391,7 @@ async def sync_repo(
             detail=f"GitHub token for @{repo.github_account.github_username} has expired. Please reconnect."
         )
 
-    # Run in thread pool — sync_repo_prs is fully synchronous
+    # Run in thread pool sync_repo_prs is fully synchronous
     await asyncio.to_thread(sync_repo_prs, repo_id, repo.github_account.access_token)
 
     # Check how many PRs we now have
@@ -430,7 +405,6 @@ async def sync_repo(
 
 
 def _build_review_comment(analysis) -> str:
-    """Format AI analysis into a clean GitHub PR comment."""
     score = analysis.safety_score
     if score >= 80:
         score_badge = f"🟢 **Safety Score: {score}/100** — Looks good"
@@ -493,10 +467,7 @@ def _build_review_comment(analysis) -> str:
 
 
 def _run_auto_review(review_id: int, repo_full_name: str, pr_number: int, access_token: str):
-    """
-    Runs in a daemon thread — fetches PR diff from GitHub then
-    calls the AI engine to complete the review.
-    """
+  
     import asyncio
     import httpx
     from app.database import SessionLocal
@@ -526,8 +497,6 @@ def _run_auto_review(review_id: int, repo_full_name: str, pr_number: int, access
         review.original_code = diff
         db.commit()
 
-        # Run AI analysis using sync method — no event loop needed.
-        # Avoids all "Event loop is closed" errors in background threads.
         analysis = ai_engine.analyze_code_sync(
             diff, diff, repo_full_name, review.branch_name or ""
         )
@@ -545,9 +514,6 @@ def _run_auto_review(review_id: int, repo_full_name: str, pr_number: int, access
         from app.routers.reviews import _save_debt_items
         _save_debt_items(db, review, analysis)
 
-        # ── Post AI summary as GitHub comment ────────────────────────
-        # Criteria: always comment if score < 80 OR any high severity issues exist
-        # Skip comment if score >= 80 AND no high severity issues (clean PR = no noise)
         has_high_issues = any(i.severity == "high" for i in analysis.issues)
         should_comment  = analysis.safety_score < 80 or has_high_issues
 
@@ -586,11 +552,7 @@ def _run_auto_review(review_id: int, repo_full_name: str, pr_number: int, access
 
 
 def sync_repo_prs(repo_id: int, access_token: str):
-    """
-    Sync open PRs for a repo from GitHub.
-    Fully synchronous — safe to call from asyncio.to_thread() or background tasks.
-    Uses httpx sync client directly, no asyncio.run() inside.
-    """
+   
     import httpx
     from app.database import SessionLocal
 
@@ -644,8 +606,6 @@ def sync_repo_prs(repo_id: int, access_token: str):
                 existing.is_active = True
                 existing.last_synced_at = datetime.utcnow()
 
-                # ── Auto-review for existing PRs too ──────────────────
-                # Triggers if user is in auto mode AND no review exists yet
                 try:
                     account = repo.github_account
                     if account:
@@ -710,9 +670,6 @@ def sync_repo_prs(repo_id: int, access_token: str):
                 db.add(new_pr)
                 db.flush()  # get new_pr.id without full commit
 
-                # ── Auto-review trigger ──────────────────────────────
-                # If the repo owner has automatic mode, kick off a review
-                # for every newly discovered PR
                 try:
                     account = repo.github_account
                     if account:
@@ -778,17 +735,12 @@ def sync_repo_prs(repo_id: int, access_token: str):
         db.close()
 
 
-# ==========================================================
-# DEBUG — remove in production
-# ==========================================================
-
 @router.get("/repos/{repo_id}/debug-sync")
 async def debug_sync(
     repo_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Debug: fetch PRs live from GitHub and return raw result + what's in DB."""
     import httpx
 
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
@@ -834,10 +786,6 @@ async def debug_sync(
     }
 
 
-# ==========================================================
-# PR ENDPOINTS
-# ==========================================================
-
 @router.get("/repos/{repo_id}/pulls", response_model=List[GitHubPRDetail])
 async def get_repo_prs(
     repo_id: int,
@@ -845,11 +793,6 @@ async def get_repo_prs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get PRs for a repo.
-    force_sync=true  → fetch live from GitHub and upsert in the SAME db session, then return.
-    force_sync=false → return cached rows only.
-    """
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubRepoImport.id == repo_id,
         GitHubAccount.user_id == current_user.id,
@@ -903,7 +846,7 @@ async def get_repo_prs(
                         existing.updated_at_github = parse_dt(pr_data.get("updated_at"))
                         print(f"[pulls] Updated PR #{pr_data['number']}")
 
-                        # ── Auto-review trigger for existing PRs ──────
+                        # Auto-review trigger for existing PRs
                         try:
                             user = db.query(User).filter(User.id == current_user.id).first()
                             print(f"[auto] Checking auto-review: user={user.email if user else None}, mode={user.review_mode if user else None}")
@@ -1001,7 +944,7 @@ async def get_repo_prs(
                 db.rollback()
             except Exception:
                 pass
-            # Re-check token validity in a fresh query
+            # Re check token validity in a fresh query
             try:
                 err_str = str(e)
                 if "401" in err_str or "Bad credentials" in err_str:
@@ -1033,7 +976,6 @@ async def get_pr_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Fetch changed files and diff for a PR from GitHub"""
     pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubPR.id == pr_id,
         GitHubAccount.user_id == current_user.id
@@ -1088,10 +1030,6 @@ async def check_pr_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Check real-time PR status from GitHub before merging.
-    Returns is_open, state, mergeable.
-    """
     pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubPR.id == pr_id,
         GitHubAccount.user_id == current_user.id
@@ -1137,10 +1075,6 @@ async def trigger_pr_auto_review(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Manually trigger an auto review for a PR.
-    Called by frontend when PR is opened in auto mode and no review exists yet.
-    """
     pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubPR.id == pr_id,
         GitHubAccount.user_id == current_user.id
@@ -1200,7 +1134,6 @@ async def add_pr_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Post a comment to a GitHub PR"""
     pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubPR.id == pr_id,
         GitHubAccount.user_id == current_user.id
@@ -1227,7 +1160,6 @@ async def approve_pr(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Approve a GitHub PR"""
     pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubPR.id == pr_id,
         GitHubAccount.user_id == current_user.id
@@ -1249,7 +1181,7 @@ async def approve_pr(
         return {"message": "PR approved on GitHub", "success": True}
     except Exception as e:
         err_msg = str(e)
-        # Return 422 for known GitHub business-logic rejections (not server errors)
+        # Return 422 for known GitHub business logic rejections (not server errors)
         if "cannot approve" in err_msg.lower() or "own pull request" in err_msg.lower():
             raise HTTPException(status_code=422, detail=err_msg)
         raise HTTPException(status_code=500, detail=f"Failed to approve PR: {err_msg}")
@@ -1263,13 +1195,6 @@ async def merge_pr(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Merge a GitHub PR.
-    Always verifies:
-      1. PR belongs to current user's account
-      2. PR is still open on GitHub (not already merged/closed)
-      3. Merges into the correct branch of the correct repo using the correct account token
-    """
     pr = db.query(GitHubPR).join(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubPR.id == pr_id,
         GitHubAccount.user_id == current_user.id
@@ -1289,7 +1214,7 @@ async def merge_pr(
     try:
         client = get_github_client(pr.repo.github_account.access_token)
 
-        # ── Pre-merge check: verify PR is still open on GitHub ──
+        # Pre merge check: verify PR is still open on GitHub
         live_details = await client.get_pr_details(pr.repo.repo_full_name, pr.pr_number)
         live_state = live_details.get("state", "unknown")
 
@@ -1310,7 +1235,7 @@ async def merge_pr(
                 detail=f"PR #{pr.pr_number} has merge conflicts. Resolve conflicts before merging."
             )
 
-        # ── Execute merge into correct branch of correct repo ──
+        # Execute merge into correct branch of correct repo
         final_commit_title = commit_title or (
             f"Merged PR #{pr.pr_number}: {pr.title} ({pr.head_ref} → {pr.base_ref})"
         )
@@ -1325,7 +1250,7 @@ async def merge_pr(
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
 
-        # ── Update local state ──
+        # Update local state
         pr.state = "merged"
         pr.is_active = False
         db.commit()

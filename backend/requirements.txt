@@ -1,40 +1,30 @@
-# FastAPI & Server
 fastapi
 uvicorn[standard]
 python-multipart
 
-# Database
 sqlalchemy
 pymysql
 mysqlclient
 alembic
 
-# Redis
 redis
 
-# Auth
 python-jose[cryptography]
 passlib==1.7.4
 bcrypt==4.0.1
 
-# HTTP Client (for GitHub API calls)
 httpx
 
-# AI — one package covers OpenRouter + Groq (both OpenAI-compatible)
 openai>=1.0.0
 
-# Stripe billing
 stripe>=7.0.0
 
-# GitHub App JWT signing
 PyJWT>=2.8.0
 cryptography>=41.0.0
 
-# Validation & Settings
 pydantic
 pydantic-settings
 pydantic[email]
 python-dotenv
 
-# Utilities
 python-dateutil

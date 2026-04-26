@@ -18,16 +18,7 @@ async def get_debt_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Debt summary for a repo:
-    - total open debt items
-    - breakdown by debt_type
-    - breakdown by severity
-    - trend: items per week for last N days
-    - worst files (top 5 by item count)
-    - debt score (0-100, higher = more debt)
-    """
-    # Verify repo belongs to current user
+
     repo = db.query(GitHubRepoImport).join(GitHubAccount).filter(
         GitHubRepoImport.id == repo_id,
         GitHubAccount.user_id == current_user.id,
@@ -38,7 +29,6 @@ async def get_debt_summary(
 
     since = datetime.utcnow() - timedelta(days=days)
 
-    # Base query — open items for this repo within window
     base = db.query(DebtItem).filter(
         DebtItem.repo_id == repo_id,
         DebtItem.is_resolved == False,
@@ -48,23 +38,18 @@ async def get_debt_summary(
     all_items = base.all()
     total = len(all_items)
 
-    # Debt score: weighted sum capped at 100
-    # high=3pts, medium=2pts, low=1pt — normalised to 100
     weights = {"high": 3, "medium": 2, "low": 1}
     raw_score = sum(weights.get(i.severity, 1) for i in all_items)
     debt_score = min(100, raw_score)
 
-    # By debt_type
     by_type: dict = {}
     for item in all_items:
         by_type[item.debt_type] = by_type.get(item.debt_type, 0) + 1
 
-    # By severity
     by_severity: dict = {"high": 0, "medium": 0, "low": 0}
     for item in all_items:
         by_severity[item.severity] = by_severity.get(item.severity, 0) + 1
 
-    # Weekly trend — last 12 weeks
     trend = []
     for week in range(11, -1, -1):
         week_start = datetime.utcnow() - timedelta(weeks=week+1)
@@ -80,7 +65,6 @@ async def get_debt_summary(
             "count": count
         })
 
-    # Worst files — top 5 by item count (skip null file_path for now)
     file_counts: dict = {}
     for item in all_items:
         if item.file_path:
@@ -88,7 +72,6 @@ async def get_debt_summary(
     worst_files = sorted(file_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     worst_files = [{"file": f, "count": c} for f, c in worst_files]
 
-    # Recent items — last 10
     recent = db.query(DebtItem).filter(
         DebtItem.repo_id == repo_id,
         DebtItem.is_resolved == False

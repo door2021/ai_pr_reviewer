@@ -22,7 +22,6 @@ async def approve_pr(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Approve a GitHub PR"""
     review = db.query(Review).filter(
         Review.id == review_id,
         Review.user_id == current_user.id
@@ -66,7 +65,6 @@ async def request_changes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Request changes on a GitHub PR"""
     review = db.query(Review).filter(
         Review.id == review_id,
         Review.user_id == current_user.id
@@ -109,7 +107,6 @@ async def merge_pr(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Merge a GitHub PR"""
     review = db.query(Review).filter(
         Review.id == review_id,
         Review.user_id == current_user.id

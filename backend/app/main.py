@@ -5,16 +5,12 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine, Base
 
-# ── Silence noisy loggers ─────────────────────────────────────────────────────
-# SQLAlchemy SQL query logs — only show warnings and above
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
 logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
 
-# Uvicorn access logs — keep but reduce noise
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-# Keep app-level logs (INFO and above)
 logging.getLogger("app").setLevel(logging.INFO)
 
 app = FastAPI(
@@ -24,8 +20,6 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS — must be first middleware ───────────────────────────────────────────
-# Allow all origins in dev, restrict to configured origins in prod
 cors_origins = settings.get_cors_origins()
 
 app.add_middleware(
@@ -40,15 +34,12 @@ app.add_middleware(
 )
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
     import app.models
     Base.metadata.create_all(bind=engine)
     print(f"[startup] Tables verified. CORS origins: {cors_origins}")
 
-
-# ── Routers ───────────────────────────────────────────────────────────────────
 from app.routers import github as github_router
 from app.routers import reviews as reviews_router
 from app.routers import users as users_router
@@ -67,7 +58,6 @@ app.include_router(users_router.router,      prefix="/api/v1")
 app.include_router(github_app_router.router, prefix="/api/v1")
 app.include_router(debt_router.router,       prefix="/api/v1")
 
-# Billing — optional
 if settings.STRIPE_SECRET_KEY:
     try:
         from app.routers import billing as billing_router
@@ -77,7 +67,6 @@ if settings.STRIPE_SECRET_KEY:
         print(f"[main] Billing router skipped: {e}")
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
     return {"status": "ok", "app": settings.APP_NAME, "version": settings.VERSION}
