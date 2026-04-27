@@ -16,17 +16,17 @@ export default function Setting() {
   const navigate = useNavigate();
   const { user, updateReviewMode, loadUserProfile } = useStore();
 
-  // ── Tab ──────────────────────────────────────────────────────
+
   const [activeTab, setActiveTab] = useState<Tab>('review');
 
-  // ── Review settings ──────────────────────────────────────────
+
   const [reviewMode, setReviewMode]   = useState<'manual' | 'automatic'>('manual');
   const [threshold, setThreshold]     = useState(85);
   const [savingReview, setSavingReview]       = useState(false);
   const [reviewSuccess, setReviewSuccess]     = useState('');
   const [reviewError, setReviewError]         = useState('');
 
-  // ── Profile settings ─────────────────────────────────────────
+
   const [fullName, setFullName]       = useState('');
   const [email, setEmail]             = useState('');
   const [avatarUrl, setAvatarUrl]     = useState('');
@@ -34,7 +34,7 @@ export default function Setting() {
   const [profileSuccess, setProfileSuccess]   = useState('');
   const [profileError, setProfileError]       = useState('');
 
-  // ── Security (password) ──────────────────────────────────────
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword]         = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -55,7 +55,6 @@ export default function Setting() {
     }
   }, [user]);
 
-  // ── Handlers ──────────────────────────────────────────────────
 
   const handleSaveReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,7 +160,7 @@ export default function Setting() {
           ))}
         </div>
 
-        {/* ── Review Mode Tab ── */}
+        {/* Review Mode Tab */}
         {activeTab === 'review' && (
           <Card className="border-border/50 bg-surface/80">
             <CardHeader>
@@ -238,7 +237,7 @@ export default function Setting() {
           </Card>
         )}
 
-        {/* ── Profile Tab ── */}
+        {/* Profile Tab */}
         {activeTab === 'profile' && (
           <Card className="border-border/50 bg-surface/80">
             <CardHeader>
@@ -291,7 +290,7 @@ export default function Setting() {
                   />
                 </div>
 
-                {/* Email — read-only */}
+                {/* Email read-only */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-text flex items-center gap-2">
                     <Mail className="w-3.5 h-3.5 text-text-muted" /> Email
@@ -337,7 +336,7 @@ export default function Setting() {
           </Card>
         )}
 
-        {/* ── Security Tab ── */}
+        {/* Security Tab  */}
         {activeTab === 'security' && (
           <Card className="border-border/50 bg-surface/80">
             <CardHeader>

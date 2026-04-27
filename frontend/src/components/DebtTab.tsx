@@ -5,7 +5,6 @@ import {
   TrendingUp, ShieldAlert, Layers, ChevronRight,
 } from 'lucide-react';
 
-// ── Types ──────────────────────────────────────────────────────
 interface DebtSummary {
   repo_name: string;
   debt_score: number;
@@ -25,7 +24,6 @@ interface DebtSummary {
   }[];
 }
 
-// ── Helpers ────────────────────────────────────────────────────
 const DEBT_TYPE_LABELS: Record<string, string> = {
   missing_tests:           'Missing Tests',
   missing_error_handling:  'Missing Error Handling',
@@ -63,7 +61,6 @@ function scoreLabel(score: number) {
   return 'Critical';
 }
 
-// ── Mini bar chart ─────────────────────────────────────────────
 function TrendChart({ trend }: { trend: { week: string; count: number }[] }) {
   const max = Math.max(...trend.map(t => t.count), 1);
   return (
@@ -84,7 +81,6 @@ function TrendChart({ trend }: { trend: { week: string; count: number }[] }) {
   );
 }
 
-// ── Main component ─────────────────────────────────────────────
 export default function DebtTab({ repoId }: { repoId: number }) {
   const [data, setData]       = useState<DebtSummary | null>(null);
   const [loading, setLoading] = useState(true);

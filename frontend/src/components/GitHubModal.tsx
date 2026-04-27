@@ -45,7 +45,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
   const [importMessage, setImportMessage] = useState(IMPORT_MESSAGES[0]);
   const [fetchingRepos, setFetchingRepos] = useState(false);
 
-  // When modal opens, decide starting step based on existing accounts
   useEffect(() => {
     if (isOpen) {
       reset();
@@ -54,10 +53,8 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
     }
   }, [isOpen]);
 
-  // When accounts list updates (after connecting new), refresh step if needed
   useEffect(() => {
     if (isOpen && step === 'token' && githubAccounts.length > 0 && !selectedAccount) {
-      // Just connected a new account — go to account selection to pick it
       setStep('account');
     }
   }, [githubAccounts.length]);
@@ -77,7 +74,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
 
   const handleClose = () => { reset(); onClose(); };
 
-  // ── Step: connect new account ──
   const handleConnectAccount = async () => {
     if (!token.trim()) { setLocalError('Token is required'); return; }
     setLocalError('');
@@ -85,9 +81,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
       const newAccount = await connectGitHubAccount(token, accountLabel || undefined);
       setToken('');
       setAccountLabel('');
-      // After connecting, immediately load repos for this new account
-      // githubAccounts state has been updated by connectGitHubAccount
-      // Get the freshly loaded accounts to find the new one
       const updatedAccounts = useStore.getState().githubAccounts;
       const justAdded = updatedAccounts[updatedAccounts.length - 1];
       if (justAdded) {
@@ -101,7 +94,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
     }
   };
 
-  // ── Step: pick account → fetch its GitHub repos ──
   const handleSelectAccount = async (account: GitHubAccount) => {
     setSelectedAccount(account);
     setLocalError('');
@@ -139,7 +131,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
   const selectAll = () => setSelectedRepos(filteredRepos.map(r => r.full_name));
   const selectNone = () => setSelectedRepos([]);
 
-  // ── Step: import selected repos ──
   const handleImport = async () => {
     if (selectedRepos.length === 0) { setLocalError('Select at least one repo'); return; }
     if (!selectedAccount) return;
@@ -174,7 +165,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
     r.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Already-imported repo full names for this account
   const alreadyImported = useStore.getState().importedRepos
     .filter(r => r.github_account_id === selectedAccount?.id)
     .map(r => r.repo_full_name);
@@ -233,7 +223,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
             </div>
           )}
 
-          {/* ─── STEP: account ─── */}
           {step === 'account' && (
             <div className="space-y-2">
               {githubAccounts.map(account => (
@@ -290,7 +279,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
             </div>
           )}
 
-          {/* ─── STEP: token ─── */}
           {step === 'token' && (
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-blue-500/8 border border-blue-500/20 text-sm text-blue-200 space-y-2">
@@ -330,7 +318,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
             </div>
           )}
 
-          {/* ─── STEP: repos ─── */}
           {step === 'repos' && (
             <div className="space-y-3">
               {/* Search */}
@@ -418,7 +405,6 @@ export function GitHubImportModal({ isOpen, onClose }: GitHubImportModalProps) {
             </div>
           )}
 
-          {/* ─── STEP: importing animation ─── */}
           {step === 'importing' && (
             <div className="py-10 flex flex-col items-center gap-6">
               {importProgress < 100 ? (

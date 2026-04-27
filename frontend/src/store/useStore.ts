@@ -2,13 +2,10 @@ import { create } from 'zustand';
 import { User, GitHubAccount, GitHubRepo, GitHubPR, Review } from '@/types';
 import { authAPI, usersAPI, githubAPI, reviewsAPI } from '@/lib/api';
 
-// Always returns a plain string — never an object that would crash React rendering
 function extractError(error: any, fallback: string): string {
   if (!error) return fallback;
-  // Axios error with response body
   const detail = error?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
-  // FastAPI 422 returns detail as array of objects
   if (Array.isArray(detail)) {
     return detail.map((d: any) => d?.msg || JSON.stringify(d)).join(', ');
   }
@@ -17,13 +14,12 @@ function extractError(error: any, fallback: string): string {
 }
 
 interface AppState {
-  // Auth State
+
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
 
-  // GitHub State
   githubAccounts: GitHubAccount[];
   importedRepos: GitHubRepo[];
   selectedAccount: GitHubAccount | null;
@@ -32,30 +28,28 @@ interface AppState {
   repoPRs: GitHubPR[];
   syncingAccountId: number | null;
 
-  // Review State
   currentReview: Review | null;
   originalCode: string;
   reviewedCode: string;
   isReviewing: boolean;
   reviewMode: 'manual' | 'automatic';
 
-  // UI State
   sidebarOpen: boolean;
   expandedAccounts: Set<number>;
   expandedRepos: Set<number>;
 
-  // PR action state — persists across renders, resets on PR change
+  // PR action state persists across renders, resets on PR change
   prApproved: boolean;
   prMerged: boolean;
 
-  // Actions - Auth
+  // Actions Auth
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   loadUserProfile: () => Promise<void>;
 
-  // Actions - GitHub
+  // Actions GitHub
   loadGitHubAccounts: () => Promise<void>;
   connectGitHubAccount: (token: string, label?: string) => Promise<any>;
   disconnectGitHubAccount: (accountId: number) => Promise<void>;
@@ -67,7 +61,7 @@ interface AppState {
   syncAccount: (accountId: number) => Promise<void>;
   loadRepoPRs: (repoId: number, forceSync?: boolean) => Promise<void>;
 
-  // Actions - Review
+  // Actions Review
   selectAccount: (account: GitHubAccount | null) => void;
   selectRepo: (repo: GitHubRepo | null) => void;
   selectPR: (pr: GitHubPR | null) => void;
@@ -81,7 +75,7 @@ interface AppState {
   mergePR: (mergeMethod?: string) => Promise<void>;
   approvePR: (comment?: string) => Promise<void>;
 
-  // Actions - UI
+  // Actions  UI
   toggleAccount: (accountId: number) => void;
   toggleRepo: (repoId: number) => void;
   setSidebarOpen: (open: boolean) => void;
@@ -113,9 +107,6 @@ export const useStore = create<AppState>((set, get) => ({
   expandedAccounts: new Set(),
   expandedRepos: new Set(),
 
-  // ===========================================
-  // AUTH ACTIONS
-  // ===========================================
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
@@ -132,7 +123,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Fixed: signup should NOT auto-login — navigates to login page instead
+  // Fixed: signup should NOT auto-login navigates to login page instead
   signup: async (email: string, password: string, name: string) => {
     set({ isLoading: true, error: null });
     try {
@@ -197,9 +188,6 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // ===========================================
-  // GITHUB ACTIONS
-  // ===========================================
 
   loadGitHubAccounts: async () => {
     try {
@@ -324,9 +312,6 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // ===========================================
-  // REVIEW ACTIONS
-  // ===========================================
 
   selectAccount: (account: GitHubAccount | null) => {
     set({ selectedAccount: account });
@@ -420,8 +405,6 @@ export const useStore = create<AppState>((set, get) => ({
         isReviewing: false,
       });
 
-      // Poll until the background AI task completes
-      // The review starts as 'processing' — we poll /reviews/{id}/status every 2s
       if (review.status === 'processing') {
         const prId = selectedPR.id;
         const maxAttempts = 30; // 60 seconds max
@@ -549,7 +532,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
     try {
       await githubAPI.approvePR(prId, comment);
-      // Mark approved in store — persists until a new PR is selected
+      // Mark approved in store persists until a new PR is selected
       set({ prApproved: true });
       // Persist to localStorage so it survives logout/refresh
       try {
@@ -561,9 +544,6 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // ===========================================
-  // UI ACTIONS
-  // ===========================================
 
   toggleAccount: (accountId: number) => {
     const newExpanded = new Set(get().expandedAccounts);

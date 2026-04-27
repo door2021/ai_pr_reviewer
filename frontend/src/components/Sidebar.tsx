@@ -15,7 +15,6 @@ const MIN_WIDTH = 180;
 const MAX_WIDTH = 520;
 const DEFAULT_WIDTH = 288;
 
-// ── Token-expired re-auth modal ───────────────────────────────
 function ReconnectModal({
   account,
   onClose,
@@ -92,7 +91,6 @@ function ReconnectModal({
   );
 }
 
-// ── Main Sidebar ──────────────────────────────────────────────
 export default function Sidebar() {
   const navigate = useNavigate();
   const {
@@ -124,7 +122,7 @@ export default function Sidebar() {
   const [loadingPRsRepoId, setLoadingPRsRepoId] = useState<number | null>(null);
   const [reconnectTarget, setReconnectTarget] = useState<GitHubAccount | null>(null);
 
-  // ── Resizable sidebar ──
+  // Resizable sidebar 
   const [width, setWidth] = useState(() => {
     const s = localStorage.getItem('sidebar_width');
     return s ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Number(s))) : DEFAULT_WIDTH;
@@ -162,7 +160,7 @@ export default function Sidebar() {
 
   const isNarrow = width < 220;
 
-  // ── Handlers ──
+  // Handlers
   const handleAccountClick = (account: GitHubAccount) => {
     if (!account.is_token_valid) { setReconnectTarget(account); return; }
     toggleAccount(account.id);
@@ -263,7 +261,7 @@ export default function Sidebar() {
 
                 return (
                   <div key={account.id}>
-                    {/* ── Account Row ── */}
+                    {/* Account Row */}
                     <div
                       onClick={() => handleAccountClick(account)}
                       title={expired ? 'Token expired — click to reconnect' : `@${account.github_username}`}
@@ -328,7 +326,7 @@ export default function Sidebar() {
                       </button>
                     </div>
 
-                    {/* ── Repos ── */}
+                    {/* Repos */}
                     {expandedAccounts.has(account.id) && !expired && (
                       <div className="ml-3 mt-0.5 border-l-2 border-border/50 pl-2 space-y-0.5">
                         {repos.length === 0 ? (
@@ -346,7 +344,7 @@ export default function Sidebar() {
 
                           return (
                             <div key={repo.id}>
-                              {/* Repo Row — div not button to avoid nested button error */}
+                              {/* Repo Row div not button to avoid nested button error */}
                               <div
                                 onClick={() => handleRepoClick(repo)}
                                 role="button"

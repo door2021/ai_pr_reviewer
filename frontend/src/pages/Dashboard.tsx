@@ -13,7 +13,6 @@ import { githubAPI, reviewsAPI } from '@/lib/api';
 import DebtTab from '@/components/DebtTab';
 import { createPortal } from 'react-dom';
 
-// ── Diff renderer ─────────────────────────────────────────────
 function DiffContent({ patch }: { patch: string }) {
   if (!patch) return <p className="text-xs text-text-muted px-4 py-3 italic">No diff available for this file</p>;
   const lines = patch.split('\n');
@@ -64,7 +63,6 @@ function FileRow({ file }: { file: any }) {
   );
 }
 
-// ── PR Description Generator Modal ────────────────────────────
 interface PRDescription {
   title: string;
   summary: string;
@@ -295,7 +293,6 @@ function PRDescriptionModal({
   );
 }
 
-// ── Main Dashboard ────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -326,7 +323,7 @@ export default function Dashboard() {
   const commentRef = useRef<HTMLTextAreaElement>(null);
 
   const isAutoMode   = reviewMode === 'automatic';
-  // After approve OR merge — lock comments and review
+  // After approve OR merge lock comments and review
   const actionsLocked = prApproved || prMerged;
 
   // Load files when PR changes
@@ -347,18 +344,13 @@ export default function Dashboard() {
   useEffect(() => { setSuccessMsg(''); setComment(''); setShowDescModal(false); setZeroNoise(false); }, [selectedPR?.id]);
   useEffect(() => { setActiveTab('prs'); }, [selectedRepo?.id]);
 
-  // ── Auto mode: trigger + poll for review when PR is opened ──────
   useEffect(() => {
     if (!selectedPR || !isAutoMode) return;
 
-    // If review already exists and is completed — no need to poll
     const existing = useStore.getState().currentReview;
     if (existing && existing.status !== 'processing') return;
 
-    // Trigger auto review immediately via API
-    // This creates the review record and starts the background thread
     githubAPI.triggerAutoReview(selectedPR.id).catch(() => {
-      // Silently ignore — review may already exist
     });
 
     let stopped = false;
@@ -472,7 +464,7 @@ export default function Dashboard() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* ── Header ── */}
+        {/*  Header */}
         <header className="h-16 bg-surface/80 backdrop-blur-xl border-b border-border flex items-center justify-between px-6 gap-4 flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <GitPullRequest className="w-5 h-5 text-primary flex-shrink-0" />
@@ -515,7 +507,7 @@ export default function Dashboard() {
 
             {selectedPR && (
               <>
-                {/* Generate Description — only useful before review exists */}
+                {/* Generate Description only useful before review exists */}
                 {!currentReview && (
                   <Button
                     variant="outline"
@@ -530,9 +522,9 @@ export default function Dashboard() {
                   </Button>
                 )}
 
-                {/* Review — manual mode: user clicks; auto mode: show status */}
+                {/* Review manual mode: user clicks; auto mode: show status */}
                 {isAutoMode ? (
-                  // Auto mode — show review status instead of button
+                  // Auto mode show review status instead of button
                   currentReview?.status === 'processing' || isReviewing ? (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-medium">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -567,7 +559,7 @@ export default function Dashboard() {
                   </Button>
                 )}
 
-                {/* Approve — always visible, becomes badge once clicked */}
+                {/* Approve always visible, becomes badge once clicked */}
                 {prApproved ? (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium select-none">
                     <CheckCircle className="w-3.5 h-3.5" />
@@ -626,7 +618,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* ── Banners ── */}
+        {/* Banners */}
         {error && (
           <div className="mx-6 mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" />{error}</div>
@@ -639,7 +631,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ── Auto mode — merge recommendation banner ── */}
+        {/* Auto mode merge recommendation banner */}
         {isAutoMode && currentReview?.status === 'completed' && currentReview?.safety_score !== undefined && (
           <div className={`mx-6 mt-3 p-3 rounded-lg border text-sm flex items-center gap-2 flex-shrink-0 ${
             currentReview.safety_score >= 80
@@ -671,10 +663,10 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ── Empty state — no PR selected ── */}
+        {/* Empty state no PR selected */}
         {!selectedPR ? (
           <div className="flex-1 flex flex-col min-h-0">
-            {/* Tab bar — only shown when a repo is selected */}
+            {/* Tab bar only shown when a repo is selected */}
             {selectedRepo ? (
               <>
                 <div className="flex items-center gap-1 px-6 pt-4 border-b border-border flex-shrink-0">
@@ -730,7 +722,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-            {/* ── PR meta bar ── */}
+            {/* PR meta bar */}
             <div className="mx-6 mt-3 px-4 py-2 rounded-lg bg-surface/50 border border-border flex items-center gap-4 text-xs text-text-muted flex-shrink-0 flex-wrap">
               <span><span className="text-text-muted">Author:</span> <span className="text-text">@{selectedPR.author_login || 'unknown'}</span></span>
               <span>·</span>
@@ -759,10 +751,10 @@ export default function Dashboard() {
               </span>
             </div>
 
-            {/* ── Changed files ── */}
+            {/* Changed files */}
             <div className="flex-1 overflow-y-auto px-6 pt-3 pb-2 min-h-0">
 
-              {/* AI Review Results panel — shown when review exists OR auto mode is active */}
+              {/* AI Review Results panel shown when review exists OR auto mode is active */}
               {(currentReview || isAutoMode) && (
                 <div className={`mb-4 rounded-xl border overflow-hidden ${
                   !currentReview || currentReview.status === 'processing'
@@ -817,7 +809,7 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  {/* Panel body — only shown when completed */}
+                  {/* Panel body only shown when completed */}
                   {currentReview && currentReview.status !== 'processing' && currentReview.ai_feedback && (
                     <div className="px-4 py-3 space-y-3">
                       {/* Summary */}
@@ -848,7 +840,7 @@ export default function Dashboard() {
                             )}
                           </div>
 
-                          {/* Issue cards — filtered in Zero Noise mode */}
+                          {/* Issue cards filtered in Zero Noise mode */}
                           {(zeroNoise
                             ? currentReview.ai_feedback.issues
                                 .filter((i: any) => i.severity === 'high')
@@ -876,7 +868,7 @@ export default function Dashboard() {
                             </div>
                           ))}
 
-                          {/* Zero Noise — no high severity issues fallback */}
+                          {/* Zero Noise no high severity issues fallback */}
                           {zeroNoise && currentReview.ai_feedback.issues.filter((i: any) => i.severity === 'high').length === 0 && (
                             <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-500/8 border border-emerald-500/15 text-xs text-emerald-400">
                               <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -940,7 +932,7 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* ── Comment box ── */}
+            {/* Comment box */}
             <div className="border-t border-border bg-surface/50 px-6 py-3 flex-shrink-0">
               {actionsLocked ? (
                 <div className="flex items-center gap-2 py-1.5 text-text-muted text-xs">
@@ -979,7 +971,7 @@ export default function Dashboard() {
       </div>
     </div>
 
-    {/* PR Description Modal — rendered via portal outside sidebar */}
+    {/* PR Description Modal rendered via portal outside sidebar */}
     {showDescModal && selectedPR && (
       <PRDescriptionModal
         prFiles={prFiles}

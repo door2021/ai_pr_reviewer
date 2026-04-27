@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { billingAPI } from '@/lib/api';
 
-// ── Plan card ─────────────────────────────────────────────────
 const PLANS = [
   {
     id: 'free',

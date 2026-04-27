@@ -14,13 +14,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout ONLY for app authentication failures, NOT for GitHub token expiry
+// Auto logout ONLY for app authentication failures, NOT for GitHub token expiry
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
       const url = error.config?.url || '';
-      // Only force-logout for core auth endpoints, not GitHub token operations
+      // Only force logout for core auth endpoints, not GitHub token operations
       const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/signup');
       const isGitHubTokenOp = url.includes('/github-import/');
       if (!isAuthEndpoint && !isGitHubTokenOp) {
@@ -33,9 +33,6 @@ api.interceptors.response.use(
   }
 );
 
-// ===========================================
-// AUTH API
-// ===========================================
 export const authAPI = {
   login: async (email: string, password: string) => {
     const res = await api.post('/auth/login', { email, password });
@@ -56,9 +53,6 @@ export const authAPI = {
   },
 };
 
-// ===========================================
-// USERS API
-// ===========================================
 export const usersAPI = {
   getProfile: async () => {
     const res = await api.get('/users/me');
@@ -81,9 +75,6 @@ export const usersAPI = {
   },
 };
 
-// ===========================================
-// GITHUB API
-// ===========================================
 export const githubAPI = {
   // Accounts
   getAccounts: async () => {
@@ -114,7 +105,7 @@ export const githubAPI = {
     return res.data;
   },
 
-  // Repos — list from GitHub API (for import modal)
+  // Repos list from GitHub API (for import modal)
   getAccountRepos: async (accountId: number) => {
     const res = await api.get(`/github-import/accounts/${accountId}/available-repos`);
     return res.data;
@@ -193,7 +184,7 @@ export const githubAPI = {
     return res.data;
   },
 
-  // Merge PR — always checks PR is open first on backend
+  // Merge PR always checks PR is open first on backend
   mergePR: async (
     prId: number,
     mergeMethod = 'squash',
@@ -206,9 +197,6 @@ export const githubAPI = {
   },
 };
 
-// ===========================================
-// REVIEWS API
-// ===========================================
 export const reviewsAPI = {
   create: async (data: {
     pr_url: string;
@@ -282,9 +270,6 @@ export const reviewsAPI = {
 
 export default api;
 
-// ===========================================
-// BILLING API
-// ===========================================
 export const billingAPI = {
   getSubscription: async () => {
     const res = await api.get('/billing/subscription');
@@ -307,9 +292,6 @@ export const billingAPI = {
   },
 };
 
-// ===========================================
-// DEBT API
-// ===========================================
 export const debtAPI = {
   getSummary: async (repoId: number, days = 90) => {
     const res = await api.get(`/debt/repo/${repoId}/summary`, { params: { days } });
