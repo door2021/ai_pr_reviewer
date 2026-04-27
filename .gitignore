@@ -182,4 +182,4 @@ Desktop.ini
 *.md.backup
 
 #// code
-stripe_migration_code.py
+stripe_migration_code.pyenv-debug
